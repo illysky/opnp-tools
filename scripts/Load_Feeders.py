@@ -333,6 +333,9 @@ def _find_holes_at_current_pos(camera):
 SPROCKET_X_TOL = 0.5   # mm — two sprocket holes must share the same X (same edge)
 
 
+GAP_THRESHOLD_MM = 5.0   # no holes for this distance = end of a tape zone
+
+
 def _set_status(msg):
     """Print scan status to the OpenPnP log/console (visible in the UI footer)."""
     print("[Load Feeders] " + msg)
@@ -401,6 +404,140 @@ def _auto_find_holes(camera, start_x, start_y, z):
 
 
 # ---------------------------------------------------------------------------
+# Full-holder auto scan
+# ---------------------------------------------------------------------------
+
+def _scan_holder(camera, x, start_y, scan_mm, z):
+    """Scan an entire holder in one machine task.
+    Returns list of (scan_y, pairs) for every step."""
+    detections  = []
+    total_steps = int(math.ceil(scan_mm / SCAN_STEP_MM)) + 1
+
+    def scan():
+        for step in range(total_steps):
+            scan_y = start_y + step * SCAN_STEP_MM
+            target = Location(LengthUnit.Millimeters, x, scan_y, z, 90.0)
+            try:
+                _move_direct(camera, target)
+            except Exception:
+                detections.append((scan_y, []))
+                continue
+            circles = _find_holes_at_current_pos(camera)
+            pairs   = _all_hole_pairs(circles)
+            detections.append((scan_y, pairs))
+            _set_status("H x={:.1f} Y={:.1f}: {} circle(s) {} pair(s)".format(
+                x, scan_y, len(circles), len(pairs)))
+
+    submitUiMachineTask(scan).get()
+    return detections
+
+
+def _zones_from_detections(detections):
+    """Convert a flat list of (y, pairs) into tape zones.
+    A zone ends when there are no pairs for >= GAP_THRESHOLD_MM.
+    Returns list of (zone_start_y, best_hole1, best_hole2) sorted by zone_start_y."""
+    zones          = []
+    zone_pairs     = []     # all pairs seen in current zone
+    zone_start     = None
+    last_active_y  = None
+
+    for scan_y, pairs in detections:
+        if pairs:
+            if zone_start is None:
+                zone_start = scan_y
+            last_active_y = scan_y
+            for p in pairs:
+                if not any(abs(ep[0].getY() - p[0].getY()) < 1.0 for ep in zone_pairs):
+                    zone_pairs.append(p)
+        else:
+            if last_active_y is not None:
+                gap = scan_y - last_active_y
+                if gap >= GAP_THRESHOLD_MM:
+                    # Close current zone
+                    if zone_pairs:
+                        best = sorted(zone_pairs, key=lambda p: p[0].getY())[0]
+                        zones.append((zone_start, best[0], best[1]))
+                        _set_status("Zone at Y={:.1f}: best pair {:.2f}/{:.2f}".format(
+                            zone_start, best[0].getY(), best[1].getY()))
+                    zone_pairs    = []
+                    zone_start    = None
+                    last_active_y = None
+
+    # Close final zone
+    if zone_pairs:
+        best = sorted(zone_pairs, key=lambda p: p[0].getY())[0]
+        zones.append((zone_start, best[0], best[1]))
+        _set_status("Zone at Y={:.1f}: best pair {:.2f}/{:.2f}".format(
+            zone_start, best[0].getY(), best[1].getY()))
+
+    return zones
+
+
+def run_auto(cfg, camera, feeders_info, holder_cfg):
+    """Fully automated mode: scan every holder, detect tape zones, configure feeders."""
+
+    # Group feeders by holder_idx, sorted by seg_start within each holder
+    from collections import OrderedDict
+    by_holder = OrderedDict()
+    for fi in sorted(feeders_info, key=lambda f: (f["holder_idx"], f["seg_start"])):
+        by_holder.setdefault(fi["holder_idx"], []).append(fi)
+
+    configured = 0
+    not_found  = []
+
+    for holder_idx, feeders in by_holder.items():
+        x       = holder_cfg["start_x"] + holder_idx * holder_cfg["spacing_x"]
+        start_y = holder_cfg["start_y"]
+        z       = holder_cfg["z"]
+        # Scan the full holder length (all segments)
+        scan_mm = HOLDER_MM
+
+        _set_status("Scanning holder {} (x={:.1f}) for {} feeder(s)...".format(
+            holder_idx + 1, x, len(feeders)))
+
+        try:
+            detections = _scan_holder(camera, x, start_y, scan_mm, z)
+        except Exception as e:
+            _set_status("Holder {} scan failed: {}".format(holder_idx + 1, e))
+            for fi in feeders:
+                not_found.append(fi["part_id"])
+            continue
+
+        zones = _zones_from_detections(detections)
+        _set_status("Holder {}: {} zone(s) found, {} feeder(s) expected".format(
+            holder_idx + 1, len(zones), len(feeders)))
+
+        # Match zones to feeders in order
+        for i, fi in enumerate(feeders):
+            if i >= len(zones):
+                _set_status("  No zone for {}".format(fi["part_id"]))
+                not_found.append(fi["part_id"])
+                continue
+            _, hole1, hole2 = zones[i]
+            feeder = fi["feeder"]
+            try:
+                feeder.setReferenceHoleLocation(hole1)
+                feeder.setLastHoleLocation(hole2)
+                feeder.setFeedCount(0)
+                feeder.setEnabled(True)
+                configured += 1
+                _set_status("  Configured {} at Y={:.2f}".format(
+                    fi["part_id"], hole1.getY()))
+            except Exception as e:
+                _set_status("  Error configuring {}: {}".format(fi["part_id"], e))
+                not_found.append(fi["part_id"])
+
+    cfg.save()
+
+    msg = "{} feeder(s) configured automatically.".format(configured)
+    if not_found:
+        msg += "\n\nNot found / failed ({}):\n{}".format(
+            len(not_found), "\n".join(not_found))
+    JOptionPane.showMessageDialog(None, _msg(msg),
+        DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -459,6 +596,21 @@ def run():
             holder_cfg = existing_config
 
     seg_mm = holder_cfg["segment_mm"]
+
+    # ------------------------------------------------------------------
+    # Mode selection
+    # ------------------------------------------------------------------
+    MODE_OPTS = ["Auto Scan", "Interactive", "Cancel"]
+    mode = JOptionPane.showOptionDialog(
+        None,
+        _msg("Auto Scan: load ALL tapes first, script scans every holder\n"
+             "and configures feeders without further interaction.\n\n"
+             "Interactive: step through each feeder one at a time."),
+        DIALOG_TITLE,
+        JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+        None, MODE_OPTS, MODE_OPTS[0])
+    if mode == 2 or mode == JOptionPane.CLOSED_OPTION:
+        return
 
     # ------------------------------------------------------------------
     # Read feeders and parse tape specs
@@ -540,6 +692,22 @@ def run():
 
     # Sort feeders into load order: holder_idx, then seg_start
     feeders_info.sort(key=lambda x: (x["holder_idx"], x["seg_start"]))
+
+    # ------------------------------------------------------------------
+    # Auto scan mode
+    # ------------------------------------------------------------------
+    if mode == 0:
+        ok = JOptionPane.showConfirmDialog(None,
+            _msg("Load ALL {} tape(s) into their holders now.\n\n"
+                 "The camera will scan every holder automatically\n"
+                 "and configure all feeders without further prompts.\n\n"
+                 "Click OK when all tapes are loaded.".format(len(feeders_info))),
+            DIALOG_TITLE,
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
+        if ok != JOptionPane.OK_OPTION:
+            return
+        run_auto(cfg, camera, feeders_info, holder_cfg)
+        return
 
     # ------------------------------------------------------------------
     # Interactive load loop
