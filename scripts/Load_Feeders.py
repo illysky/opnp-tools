@@ -44,7 +44,7 @@ from java.awt import GridBagLayout, GridBagConstraints, Insets
 from java.lang import Thread as JThread, Runnable
 
 from org.openpnp.model import Configuration, LengthUnit, Length, Location
-from org.openpnp.util import MovableUtils, OpenCvUtils
+from org.openpnp.util import MovableUtils, OpenCvUtils, VisionUtils
 from org.openpnp.util.UiUtils import submitUiMachineTask
 from org.openpnp.gui import MainFrame
 
@@ -309,15 +309,35 @@ def _push_frame_to_ui(camera, img):
     SwingUtilities.invokeLater(Push())
 
 
-def _find_holes_at_current_pos(camera):
-    """Capture frame, push to UI, run HoughCircles.
-    Must be called from the machine task thread (direct camera access)."""
+def _find_holes_at_current_pos(camera, pipeline=None):
+    """Capture frame, push to UI, detect sprocket holes.
+    Uses the feeder's own pipeline (DetectCircularSymmetry) when available,
+    falls back to HoughCircles otherwise.
+    Must be called from the machine task thread."""
+    # Capture and show frame
     try:
         img = camera.lightSettleAndCapture()
         if img is not None:
             _push_frame_to_ui(camera, img)
     except Exception:
         pass
+
+    if pipeline is not None:
+        try:
+            pipeline.setProperty("camera", camera)
+            pipeline.process()
+            result = pipeline.getResult("results")
+            if result is not None and result.model is not None:
+                locs = []
+                for c in list(result.model):
+                    loc = VisionUtils.getPixelLocation(camera, c.x, c.y)
+                    locs.append(loc)
+                locs.sort(key=lambda l: l.getY())
+                return locs
+        except Exception as e:
+            _set_status("  Pipeline error, falling back to HoughCircles: {}".format(e))
+
+    # Fallback: raw HoughCircles
     try:
         circles = list(OpenCvUtils.houghCircles(
             camera,
@@ -407,13 +427,14 @@ def _auto_find_holes(camera, start_x, start_y, z):
 # Full-holder auto scan
 # ---------------------------------------------------------------------------
 
-def _scan_holder(camera, nominal_x, start_y, scan_mm, z):
+def _scan_holder(camera, nominal_x, start_y, scan_mm, z, pipeline=None):
     """Scan an entire holder in one machine task.
+    Uses feeder pipeline for detection when provided; falls back to HoughCircles.
     Self-corrects X from the first detected hole pair (3D-print drift compensation).
     Returns list of (scan_y, pairs) for every step."""
     detections  = []
     total_steps = int(math.ceil(scan_mm / SCAN_STEP_MM)) + 1
-    current_x   = [nominal_x]   # mutable so inner fn can update it
+    current_x   = [nominal_x]
 
     def scan():
         for step in range(total_steps):
@@ -424,19 +445,19 @@ def _scan_holder(camera, nominal_x, start_y, scan_mm, z):
             except Exception:
                 detections.append((scan_y, []))
                 continue
-            circles = _find_holes_at_current_pos(camera)
+            circles = _find_holes_at_current_pos(camera, pipeline)
             pairs   = _all_hole_pairs(circles)
             detections.append((scan_y, pairs))
-            _set_status("H x={:.2f} Y={:.1f}: {} circle(s) {} pair(s)".format(
+            _set_status("x={:.2f} Y={:.1f}: {} circle(s) {} pair(s)".format(
                 current_x[0], scan_y, len(circles), len(pairs)))
 
-            # X self-correction: use first detected pair to recalibrate X
+            # X self-correction from first detected pair
             if pairs and current_x[0] == nominal_x:
                 h1, h2   = pairs[0]
                 actual_x = (h1.getX() + h2.getX()) / 2.0
                 drift    = actual_x - nominal_x
                 current_x[0] = actual_x
-                _set_status("  X corrected: nominal {:.2f} → actual {:.2f} (drift {:.2f}mm)".format(
+                _set_status("  X corrected: {:.2f} -> {:.2f} (drift {:.2f}mm)".format(
                     nominal_x, actual_x, drift))
 
     submitUiMachineTask(scan).get()
@@ -568,8 +589,14 @@ def run_auto(cfg, camera, feeders_info, holder_cfg):
         _set_status("Scanning slot {} (x={:.1f}) for {} feeder(s)...".format(
             holder_idx + 1, x, len(feeders)))
 
+        pipeline = None
         try:
-            detections = _scan_holder(camera, x, start_y, scan_mm, z)
+            pipeline = feeders[0]["feeder"].getPipeline()
+        except Exception:
+            pass
+
+        try:
+            detections = _scan_holder(camera, x, start_y, scan_mm, z, pipeline)
         except Exception as e:
             _set_status("Holder {} scan failed: {}".format(holder_idx + 1, e))
             for fi in feeders:
@@ -825,8 +852,14 @@ def run():
 
         _set_status("Scanning slot {} (x={:.2f})...".format(h_num, x_holder))
 
+        pipeline = None
         try:
-            detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg)
+            pipeline = flist[0]["feeder"].getPipeline()
+        except Exception:
+            pass
+
+        try:
+            detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg, pipeline)
         except Exception as e:
             JOptionPane.showMessageDialog(None,
                 _msg("Scan failed for slot {}:\n{}".format(h_num, e)),
