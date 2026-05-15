@@ -340,31 +340,43 @@ def _pick_hole_pair(circles):
     return None, None
 
 
+def _set_status(msg):
+    """Print scan status to the OpenPnP log/console (visible in the UI footer)."""
+    print("[Load Feeders] " + msg)
+
+
 def _auto_find_holes(camera, start_x, start_y, z):
     """Scan along +Y inside a SINGLE machine task so the EDT stays free
     to process UI repaints.  Returns (hole1, hole2) or (None, None)."""
-    result = [None, None]
+    result    = [None, None]
+    total_steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
 
     def scan():
-        steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
-        for step in range(steps):
+        for step in range(total_steps):
             scan_y = start_y + step * SCAN_STEP_MM
+            _set_status("Scanning step {}/{} at Y={:.1f}mm ...".format(
+                step + 1, total_steps, scan_y))
             target = Location(LengthUnit.Millimeters, start_x, scan_y, z, 90.0)
             try:
                 _move_direct(camera, target)
             except Exception:
                 continue
             circles = _find_holes_at_current_pos(camera)
+            n = len(circles)
+            _set_status("  {} circle(s) found".format(n))
             h1, h2 = _pick_hole_pair(circles)
             if h1 is not None:
+                _set_status("  Hole pair found at Y={:.2f} and Y={:.2f}".format(
+                    h1.getY(), h2.getY()))
                 result[0] = h1
                 result[1] = h2
                 return
+        _set_status("Scan complete — no hole pair found in {:.0f}mm".format(SCAN_MAX_MM))
 
     try:
         submitUiMachineTask(scan).get()
-    except Exception:
-        pass
+    except Exception as e:
+        _set_status("Scan task error: {}".format(e))
 
     return result[0], result[1]
 
