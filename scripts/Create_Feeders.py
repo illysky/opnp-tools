@@ -8,15 +8,22 @@ Workflow:
   3. Per-part quantities are calculated from board placement counts x build
      size x (1 + attrition/100).  Tapes that would exceed MAX_TAPE_MM
      (160 mm) are split across multiple feeder slots.
-  4. All ReferenceStripFeeders are created, pre-assigned to their part and
-     pitch, named with the per-feeder count, and left disabled so pick
-     positions can be taught before use.
-
-Tape pitch per package is read from package_rules.json (tape_pitch_mm field).
+  4. Tape spec is read from each Package's tapeSpecification field
+     (set by Create Parts).  Format: '{width}-{thickness*100}-{colour}-{pitch}'
+     e.g. '8-70-W-2'.
+       width    : 8 | 12 | 16  (mm)
+       thickness: 35=0.35mm  70=0.70mm  100=1.0mm  (added to pick Z)
+       colour   : B | W | C   (reserved for future vision settings)
+       pitch    : 2 | 4 | 8   (mm between components)
+  5. Parts with a blank tape spec are skipped.  Parts with an invalid spec
+     are collected and shown in an error summary before any feeders are made.
+  6. All ReferenceStripFeeders are created, pre-assigned to their part,
+     tape width, part pitch and max feed count.  Feeders are left disabled
+     so pick positions can be taught before use.
 """
 
 from __future__ import absolute_import
-import os, re, json, math
+import os, re, math
 import xml.etree.ElementTree as ET
 
 from javax.swing import (JOptionPane, JPanel, JLabel, JTextField,
@@ -37,12 +44,15 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-DIALOG_TITLE = "Create Feeders"
-DIALOG_WIDTH = 340
-MAX_TAPE_MM  = 160.0
-FIDUCIAL_RE  = re.compile(r'(?i)fiducial')
+DIALOG_TITLE  = "Create Feeders"
+DIALOG_WIDTH  = 340
+MAX_TAPE_MM   = 160.0
+FIDUCIAL_RE   = re.compile(r'(?i)fiducial')
 
-RULES_FILE = os.path.expanduser("~/.openpnp2/scripts/illysky/package_rules.json")
+VALID_WIDTHS      = {8, 12, 16}
+VALID_THICKNESSES = {35, 70, 100}
+VALID_COLOURS     = {"B", "W", "C"}
+VALID_PITCHES     = {2, 4, 8}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,65 +64,64 @@ def _msg(text):
     return JLabel(html)
 
 
-def _load_rules():
-    try:
-        with open(RULES_FILE) as f:
-            data = json.load(f)
-        return data.get("rules", [])
-    except Exception as e:
-        JOptionPane.showMessageDialog(None,
-            _msg("Could not load package_rules.json:\n{}".format(e)),
-            DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
-        return []
+def _parse_tape_spec(spec, part_id, pkg_id):
+    """Parse and validate a tape spec string.
 
-
-def _parse_tape_spec(spec):
-    """Parse '8-70-W-2' -> (width_mm, thickness_mm, colour, pitch_mm).
-
-    Format: '{width}-{thickness*100}-{colour}-{pitch}'
-      width    : 8 | 12 | 16  (mm)
-      thickness: 35=0.35  70=0.70  100=1.0  (mm)
-      colour   : B=black  W=white  C=clear
-      pitch    : 2 | 4 | 8  (mm)
-    Returns (8.0, 0.35, 'B', 4.0) on any parse error.
+    Returns (width_mm, thickness_mm, colour, pitch_mm) on success.
+    Returns None if spec is blank (caller should skip the part).
+    Raises ValueError with a descriptive message if spec is invalid.
     """
+    if not spec or not spec.strip():
+        return None   # blank = skip silently
+
+    label = "{} [{}]".format(part_id, pkg_id)
+    s = spec.strip()
+    parts = s.split("-")
+
+    if len(parts) != 4:
+        raise ValueError("{}: expected 4 fields (e.g. 8-70-W-4), got '{}'".format(label, s))
+
+    # Width
     try:
-        p = spec.split("-")
-        width     = float(p[0])
-        thickness = float(p[1]) / 100.0
-        colour    = p[2].upper() if len(p) > 2 else "B"
-        pitch     = float(p[3])  if len(p) > 3 else 4.0
-        return width, thickness, colour, pitch
-    except Exception:
-        return 8.0, 0.35, "B", 4.0
+        w = int(parts[0])
+    except ValueError:
+        raise ValueError("{}: width '{}' is not a number".format(label, parts[0]))
+    if w not in VALID_WIDTHS:
+        raise ValueError("{}: width {} not in {}".format(label, w, sorted(VALID_WIDTHS)))
 
+    # Thickness
+    try:
+        t = int(parts[1])
+    except ValueError:
+        raise ValueError("{}: thickness '{}' is not a number".format(label, parts[1]))
+    if t not in VALID_THICKNESSES:
+        raise ValueError("{}: thickness {} not in {}".format(label, t, sorted(VALID_THICKNESSES)))
 
-def _lookup_tape(pkg_id, rules):
-    """Return (pitch_mm, width_mm, thickness_mm) for pkg_id from rules."""
-    for rule in rules:
-        pattern = rule.get("pattern", "")
-        if pattern and re.search(pattern, pkg_id, re.IGNORECASE):
-            width, thickness, _, pitch = _parse_tape_spec(
-                rule.get("tape_spec", "8-35-B-4"))
-            return pitch, width, thickness
-    return 4.0, 8.0, 0.35
+    # Colour
+    c = parts[2].upper()
+    if c not in VALID_COLOURS:
+        raise ValueError("{}: colour '{}' not in {}".format(label, c, sorted(VALID_COLOURS)))
+
+    # Pitch
+    try:
+        p = int(parts[3])
+    except ValueError:
+        raise ValueError("{}: pitch '{}' is not a number".format(label, parts[3]))
+    if p not in VALID_PITCHES:
+        raise ValueError("{}: pitch {} not in {}".format(label, p, sorted(VALID_PITCHES)))
+
+    return float(w), t / 100.0, c, float(p)
 
 
 def _count_placements(board):
-    """Return {part_id: count} for all non-fiducial, enabled placements.
-
-    Accepts type="Place" and type="Placement" (both appear in the wild
-    depending on how the board XML was generated).  Only skips explicit
-    Fiducial entries and disabled (DNP) placements.
-    """
+    """Return {part_id: count} for all non-fiducial, enabled placements."""
     board_file = board.getFile()
     if board_file is None:
         return {}
     tree = ET.parse(board_file.getAbsolutePath())
     counts = {}
     for pl in tree.getroot().iter("placement"):
-        pl_type = pl.get("type", "Placement")
-        if "fiducial" in pl_type.lower():
+        if "fiducial" in pl.get("type", "").lower():
             continue
         if pl.get("enabled", "true").lower() == "false":
             continue
@@ -145,8 +154,7 @@ def run():
             DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
         return
 
-    cfg   = Configuration.get()
-    rules = _load_rules()
+    cfg = Configuration.get()
 
     # ------------------------------------------------------------------
     # Dialog 1: clear existing feeders?
@@ -175,8 +183,8 @@ def run():
         return
 
     combo_board  = JComboBox([b.getName() for b in open_boards])
-    tf_build     = JTextField("1",  6)
-    tf_attrition = JTextField("10", 6)
+    tf_build     = JTextField("1",   6)
+    tf_attrition = JTextField("10",  6)
     tf_z         = JTextField("0.0", 6)
 
     panel = JPanel(GridBagLayout())
@@ -185,7 +193,6 @@ def run():
     gbc.fill    = GridBagConstraints.HORIZONTAL
     gbc.weightx = 1.0
 
-    # Board selector spans both columns
     gbc.gridwidth, gbc.gridx, gbc.gridy = 2, 0, 0
     gbc.anchor = GridBagConstraints.LINE_START
     gbc.insets = Insets(4, 4, 2, 4)
@@ -224,31 +231,46 @@ def run():
         return
 
     # ------------------------------------------------------------------
-    # Optionally clear existing feeders
+    # Build feeder plan — validate tape specs first, collect all errors
     # ------------------------------------------------------------------
-    machine = cfg.getMachine()
-    if do_clear:
-        for feeder in list(machine.getFeeders()):
-            machine.removeFeeder(feeder)
-
-    # ------------------------------------------------------------------
-    # Build feeder plan
-    # ------------------------------------------------------------------
-    feeder_plan = []
-    skipped     = []
+    feeder_plan  = []
+    skipped_none = []   # part not in OpenPnP
+    skipped_spec = []   # blank tape spec
+    errors       = []   # invalid tape spec strings
 
     for part_id in sorted(placement_counts.keys()):
         if FIDUCIAL_RE.search(part_id):
             continue
         board_count = placement_counts[part_id]
+
         part = cfg.getPart(part_id)
         if part is None:
-            skipped.append(part_id)
+            skipped_none.append(part_id)
             continue
 
         pkg    = part.getPackage()
         pkg_id = pkg.getId() if pkg else ""
-        pitch, tape_w, tape_t = _lookup_tape(pkg_id, rules)
+
+        # Read tape spec from Package object (set by Create Parts)
+        tape_spec_str = ""
+        try:
+            ts = pkg.getTapeSpecification() if pkg else None
+            if ts:
+                tape_spec_str = ts.strip()
+        except Exception:
+            pass
+
+        try:
+            parsed = _parse_tape_spec(tape_spec_str, part_id, pkg_id)
+        except ValueError as e:
+            errors.append(str(e))
+            continue
+
+        if parsed is None:
+            skipped_spec.append("{} [{}]".format(part_id, pkg_id))
+            continue
+
+        tape_w, tape_t, _colour, pitch = parsed
 
         total_qty   = int(math.ceil(board_count * build_size * (1.0 + attrition)))
         tape_mm     = total_qty * pitch
@@ -265,12 +287,34 @@ def run():
             "per_feeder":     per_feeder,
         })
 
-    if not feeder_plan:
+    # Show all errors before doing anything — user must fix them first
+    if errors:
         JOptionPane.showMessageDialog(None,
-            _msg("No known parts found in the board.\n"
-                 "Run 'Create Parts' first."),
+            _msg("Invalid tape spec on {} part(s) -- fix in package rules "
+                 "then re-run Create Parts:\n\n{}".format(
+                     len(errors), "\n".join(errors))),
+            DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
+        return
+
+    if not feeder_plan:
+        lines = ["No feeders to create."]
+        if skipped_spec:
+            lines.append("{} parts have no tape spec -- run Create Parts first.".format(
+                len(skipped_spec)))
+        if skipped_none:
+            lines.append("{} parts not in OpenPnP -- run Create Parts first.".format(
+                len(skipped_none)))
+        JOptionPane.showMessageDialog(None, _msg("\n".join(lines)),
             DIALOG_TITLE, JOptionPane.WARNING_MESSAGE)
         return
+
+    # ------------------------------------------------------------------
+    # Clear existing feeders if requested
+    # ------------------------------------------------------------------
+    machine = cfg.getMachine()
+    if do_clear:
+        for feeder in list(machine.getFeeders()):
+            machine.removeFeeder(feeder)
 
     # ------------------------------------------------------------------
     # Create feeders
@@ -278,7 +322,7 @@ def run():
     created = 0
 
     for fp in feeder_plan:
-        # Z = user value + tape thickness (component sits on top of the tape pocket)
+        # Z = user value + tape thickness so nozzle reaches into the pocket
         pick_z = feeder_z + fp["tape_thickness"]
         z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 0.0)
 
@@ -291,19 +335,11 @@ def run():
             feeder = ReferenceStripFeeder()
             feeder.setName(name)
             feeder.setPart(fp["part"])
-            feeder.setPartPitch(Length(fp["pitch"], LengthUnit.Millimeters))
+            feeder.setPartPitch(Length(fp["pitch"],      LengthUnit.Millimeters))
             feeder.setTapeWidth(Length(fp["tape_width"], LengthUnit.Millimeters))
+            feeder.setFeedCount(0)
+            feeder.setMaxFeedCount(fp["per_feeder"])
             feeder.setEnabled(False)
-
-            # Feed count — try common field names across OpenPnP versions
-            try:
-                feeder.setFeedCount(fp["per_feeder"])
-            except Exception:
-                pass
-            try:
-                feeder.setPartCount(fp["per_feeder"])
-            except Exception:
-                pass
 
             try:
                 feeder.setReferenceHoleLocation(z_loc)
@@ -317,9 +353,11 @@ def run():
     cfg.save()
 
     lines = ["{} feeders created ({} unique parts)".format(created, len(feeder_plan))]
-    if skipped:
-        lines.append("{} skipped (not in OpenPnP -- run Config Parts first)".format(len(skipped)))
-    lines.append("Feeders are disabled -- teach pick positions then enable.")
+    if skipped_spec:
+        lines.append("{} skipped (no tape spec)".format(len(skipped_spec)))
+    if skipped_none:
+        lines.append("{} skipped (not in OpenPnP)".format(len(skipped_none)))
+    lines.append("Feeders disabled -- teach pick positions then enable.")
 
     JOptionPane.showMessageDialog(None,
         _msg("\n".join(lines)),
