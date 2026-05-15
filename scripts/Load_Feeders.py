@@ -456,20 +456,28 @@ def _zones_from_detections(detections):
         if pairs:
             if zone_start is None:
                 zone_start = scan_y
+                _set_status("  [ZONE {}] started at Y={:.1f}".format(
+                    len(zones) + 1, zone_start))
             last_active_y = scan_y
+            added = 0
             for p in pairs:
                 if not any(abs(ep[0].getY() - p[0].getY()) < 1.0 for ep in zone_pairs):
                     zone_pairs.append(p)
+                    added += 1
+            if added:
+                _set_status("  [ZONE {}] Y={:.1f}: +{} pair(s), total={}".format(
+                    len(zones) + 1, scan_y, added, len(zone_pairs)))
         else:
             if last_active_y is not None:
                 gap = scan_y - last_active_y
+                _set_status("  [GAP] Y={:.1f}: {:.1f}mm since last detection (threshold={:.0f}mm)".format(
+                    scan_y, gap, GAP_THRESHOLD_MM))
                 if gap >= GAP_THRESHOLD_MM:
-                    # Close current zone
                     if zone_pairs:
                         best = sorted(zone_pairs, key=lambda p: p[0].getY())[0]
                         zones.append((zone_start, best[0], best[1]))
-                        _set_status("Zone at Y={:.1f}: best pair {:.2f}/{:.2f}".format(
-                            zone_start, best[0].getY(), best[1].getY()))
+                        _set_status("  [ZONE {}] CLOSED: best pair Y={:.2f}/Y={:.2f}".format(
+                            len(zones), best[0].getY(), best[1].getY()))
                     zone_pairs    = []
                     zone_start    = None
                     last_active_y = None
@@ -478,9 +486,10 @@ def _zones_from_detections(detections):
     if zone_pairs:
         best = sorted(zone_pairs, key=lambda p: p[0].getY())[0]
         zones.append((zone_start, best[0], best[1]))
-        _set_status("Zone at Y={:.1f}: best pair {:.2f}/{:.2f}".format(
-            zone_start, best[0].getY(), best[1].getY()))
+        _set_status("  [ZONE {}] CLOSED (end of scan): best pair Y={:.2f}/Y={:.2f}".format(
+            len(zones), best[0].getY(), best[1].getY()))
 
+    _set_status("Zone detection complete: {} zone(s) found".format(len(zones)))
     return zones
 
 
