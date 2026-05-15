@@ -75,14 +75,20 @@ def _lookup_tape_pitch(pkg_id, rules):
 
 
 def _count_placements(board):
-    """Return {part_id: count} for all Place-type, enabled placements."""
+    """Return {part_id: count} for all non-fiducial, enabled placements.
+
+    Accepts type="Place" and type="Placement" (both appear in the wild
+    depending on how the board XML was generated).  Only skips explicit
+    Fiducial entries and disabled (DNP) placements.
+    """
     board_file = board.getFile()
     if board_file is None:
         return {}
     tree = ET.parse(board_file.getAbsolutePath())
     counts = {}
     for pl in tree.getroot().iter("placement"):
-        if pl.get("type", "Place") != "Place":
+        pl_type = pl.get("type", "Placement")
+        if "fiducial" in pl_type.lower():
             continue
         if pl.get("enabled", "true").lower() == "false":
             continue
