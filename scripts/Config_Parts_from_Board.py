@@ -30,21 +30,10 @@ from org.openpnp import model as _openpnp_model
 # Rules file — loaded at runtime, edit with Update_Package_Rules script
 # ---------------------------------------------------------------------------
 
-def _resolve_rules_file():
-    """Resolve package_rules.json next to the real script file, following symlinks via Java NIO."""
-    try:
-        from java.nio.file import Paths, Files
-        p = Paths.get(__file__)
-        if Files.isSymbolicLink(p):
-            target = Files.readSymbolicLink(p)
-            if not target.isAbsolute():
-                target = p.getParent().resolve(target)
-            p = target
-        return str(p.getParent().resolve("package_rules.json"))
-    except Exception:
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "package_rules.json")
-
-RULES_FILE = _resolve_rules_file()
+RULES_FILE = os.environ.get(
+    "OPNP_RULES",
+    os.path.expanduser("~/opnp-tools/scripts/package_rules.json")
+)
 
 def _load_rules():
     """Load rules from package_rules.json. Falls back to a minimal catch-all."""
