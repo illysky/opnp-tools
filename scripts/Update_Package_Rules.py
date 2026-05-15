@@ -208,12 +208,15 @@ def run():
     #   - tape_pitch_mm
     # -----------------------------------------------------------------------
     def _parse_tape_spec(spec):
+        """Return (width_float, thick_str, colour_str, pitch_str)."""
         try:
-            parts = spec.split("-")
-            return float(parts[0]), parts[1] if len(parts) > 1 else "70", \
-                   parts[2].upper() if len(parts) > 2 else "B"
+            p = spec.split("-")
+            return (float(p[0]),
+                    p[1] if len(p) > 1 else "35",
+                    p[2].upper() if len(p) > 2 else "B",
+                    p[3] if len(p) > 3 else "4")
         except Exception:
-            return 8.0, "70", "B"
+            return 8.0, "35", "B", "4"
 
     try:
         machine = cfg.getMachine()
@@ -257,22 +260,29 @@ def run():
 
             changed = False
 
+            cur_w, thick_part, colour_part, pitch_part = _parse_tape_spec(
+                matched.get("tape_spec", "8-35-B-4"))
+            new_w     = cur_w
+            new_pitch = pitch_part
+
             # Most-common tape width for this package
             if pkg_id in pkg_tape_widths:
                 best_w = max(pkg_tape_widths[pkg_id], key=pkg_tape_widths[pkg_id].get)
-                cur_w, thick_part, colour_part = _parse_tape_spec(
-                    matched.get("tape_spec", "8-70-B"))
                 if best_w != cur_w:
-                    matched["tape_spec"] = "{}-{}-{}".format(
-                        int(best_w), thick_part, colour_part)
+                    new_w   = best_w
                     changed = True
 
             # Most-common tape pitch for this package
             if pkg_id in pkg_tape_pitches:
                 best_p = max(pkg_tape_pitches[pkg_id], key=pkg_tape_pitches[pkg_id].get)
-                if matched.get("tape_pitch_mm", 0.0) != best_p:
-                    matched["tape_pitch_mm"] = best_p
-                    changed = True
+                best_p_str = str(int(best_p)) if best_p == int(best_p) else str(best_p)
+                if best_p_str != pitch_part:
+                    new_pitch = best_p_str
+                    changed   = True
+
+            if changed:
+                matched["tape_spec"] = "{}-{}-{}-{}".format(
+                    int(new_w), thick_part, colour_part, new_pitch)
 
             if changed:
                 feeder_updated += 1

@@ -67,22 +67,24 @@ def _load_rules():
 
 
 def _parse_tape_spec(spec):
-    """Parse '8-35-B' -> (width_mm=8.0, thickness_mm=0.35, colour='B').
+    """Parse '8-70-W-2' -> (width_mm, thickness_mm, colour, pitch_mm).
 
-    Format: '{width}-{thickness*100}-{colour}'
-      width     : 8 | 12 | 16
-      thickness : 35=0.35mm  70=0.70mm  100=1.0mm
-      colour    : B=black  W=white  C=clear
-    Returns defaults (8.0, 0.35, 'B') on any parse error.
+    Format: '{width}-{thickness*100}-{colour}-{pitch}'
+      width    : 8 | 12 | 16  (mm)
+      thickness: 35=0.35  70=0.70  100=1.0  (mm)
+      colour   : B=black  W=white  C=clear
+      pitch    : 2 | 4 | 8  (mm)
+    Returns (8.0, 0.35, 'B', 4.0) on any parse error.
     """
     try:
-        parts = spec.split("-")
-        width     = float(parts[0])
-        thickness = float(parts[1]) / 100.0
-        colour    = parts[2].upper() if len(parts) > 2 else "B"
-        return width, thickness, colour
+        p = spec.split("-")
+        width     = float(p[0])
+        thickness = float(p[1]) / 100.0
+        colour    = p[2].upper() if len(p) > 2 else "B"
+        pitch     = float(p[3])  if len(p) > 3 else 4.0
+        return width, thickness, colour, pitch
     except Exception:
-        return 8.0, 0.35, "B"
+        return 8.0, 0.35, "B", 4.0
 
 
 def _lookup_tape(pkg_id, rules):
@@ -90,10 +92,10 @@ def _lookup_tape(pkg_id, rules):
     for rule in rules:
         pattern = rule.get("pattern", "")
         if pattern and re.search(pattern, pkg_id, re.IGNORECASE):
-            pitch = float(rule.get("tape_pitch_mm", 4.0))
-            width, thickness, _ = _parse_tape_spec(rule.get("tape_spec", "8-70-B"))
+            width, thickness, _, pitch = _parse_tape_spec(
+                rule.get("tape_spec", "8-35-B-4"))
             return pitch, width, thickness
-    return 4.0, 8.0, 0.70
+    return 4.0, 8.0, 0.35
 
 
 def _count_placements(board):
