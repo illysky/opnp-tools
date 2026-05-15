@@ -3,7 +3,7 @@ Update Package Rules
 ====================
 OpenPnP Jython script — appears in the Scripts menu automatically.
 
-Does two passes over package_rules.json:
+Does three passes over package_rules.json:
 
 1. UPDATE PACKAGES — scans all packages in OpenPnP. For each one with a
    nozzle assigned and body dims set, finds the matching rule and updates
@@ -13,7 +13,12 @@ Does two passes over package_rules.json:
 2. UPDATE PARTS — scans all parts in OpenPnP. For each one with height > 0,
    finds the rule matching its package ID and updates height_mm.
 
-Run this after tweaking packages or part heights in the OpenPnP UI.
+3. UPDATE FEEDERS — scans all feeders. For each one with a part assigned and
+   tape width > 0, finds the rule for that package and updates tape_width_mm
+   (and tape_pitch_mm if the part pitch is set).
+
+Run this after tweaking packages, part heights, or feeder tape settings in the
+OpenPnP UI.
 """
 
 from __future__ import absolute_import
@@ -108,9 +113,10 @@ def run():
     specific_rules = [r for r in rules if r.get("pattern", "")]
     catchall_rule  = next((r for r in rules if not r.get("pattern", "")), None)
 
-    pkg_updated = 0
-    pkg_added   = 0
-    part_updated = 0
+    pkg_updated    = 0
+    pkg_added      = 0
+    part_updated   = 0
+    feeder_updated = 0
 
     # -----------------------------------------------------------------------
     # Pass 1: packages → nozzle, body dims
@@ -194,7 +200,52 @@ def run():
             part_updated += 1
 
     # -----------------------------------------------------------------------
-    if pkg_updated == 0 and pkg_added == 0 and part_updated == 0:
+    # Pass 3: feeders → tape_width_mm, tape_pitch_mm
+    # -----------------------------------------------------------------------
+    try:
+        machine = cfg.getMachine()
+        for feeder in machine.getFeeders():
+            part = feeder.getPart()
+            if part is None:
+                continue
+            pkg    = part.getPackage()
+            pkg_id = pkg.getId() if pkg is not None else ""
+            if not pkg_id or FIDUCIAL_PATTERN.search(pkg_id):
+                continue
+
+            tw, tp = 0.0, 0.0
+            try:
+                w = feeder.getTapeWidth()
+                if w is not None:
+                    tw = round(w.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
+            except Exception:
+                pass
+            try:
+                p = feeder.getPartPitch()
+                if p is not None:
+                    tp = round(p.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
+            except Exception:
+                pass
+
+            if tw == 0.0 and tp == 0.0:
+                continue
+
+            matched = _find_rule(pkg_id, specific_rules)
+            if matched is None:
+                continue
+
+            changed = False
+            if tw > 0.0 and matched.get("tape_width_mm", 0.0) != tw:
+                matched["tape_width_mm"] = tw;  changed = True
+            if tp > 0.0 and matched.get("tape_pitch_mm", 0.0) != tp:
+                matched["tape_pitch_mm"] = tp;  changed = True
+            if changed:
+                feeder_updated += 1
+    except Exception:
+        pass
+
+    # -----------------------------------------------------------------------
+    if pkg_updated == 0 and pkg_added == 0 and part_updated == 0 and feeder_updated == 0:
         JOptionPane.showMessageDialog(None, _msg("No changes."),
             DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
         return
@@ -202,8 +253,8 @@ def run():
     _save_rules(data)
 
     JOptionPane.showMessageDialog(None,
-        _msg("{} Package Added\n{} Package Updated\n{} Part Updated".format(
-            pkg_added, pkg_updated, part_updated)),
+        _msg("{} Package Added\n{} Package Updated\n{} Part Updated\n{} Feeder Updated".format(
+            pkg_added, pkg_updated, part_updated, feeder_updated)),
         DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
 
 

@@ -66,12 +66,13 @@ def _load_rules():
         return []
 
 
-def _lookup_tape_pitch(pkg_id, rules):
+def _lookup_tape(pkg_id, rules):
+    """Return (tape_pitch_mm, tape_width_mm) for pkg_id from rules."""
     for rule in rules:
         pattern = rule.get("pattern", "")
         if pattern and re.search(pattern, pkg_id, re.IGNORECASE):
-            return float(rule.get("tape_pitch_mm", 4.0))
-    return 4.0
+            return float(rule.get("tape_pitch_mm", 4.0)), float(rule.get("tape_width_mm", 8.0))
+    return 4.0, 8.0
 
 
 def _count_placements(board):
@@ -224,7 +225,7 @@ def run():
 
         pkg    = part.getPackage()
         pkg_id = pkg.getId() if pkg else ""
-        pitch  = _lookup_tape_pitch(pkg_id, rules)
+        pitch, tape_w = _lookup_tape(pkg_id, rules)
 
         total_qty   = int(math.ceil(board_count * build_size * (1.0 + attrition)))
         tape_mm     = total_qty * pitch
@@ -235,6 +236,7 @@ def run():
             "part_id":     part_id,
             "part":        part,
             "pitch":       pitch,
+            "tape_width":  tape_w,
             "num_feeders": num_feeders,
             "per_feeder":  per_feeder,
         })
@@ -263,7 +265,18 @@ def run():
             feeder.setName(name)
             feeder.setPart(fp["part"])
             feeder.setPartPitch(Length(fp["pitch"], LengthUnit.Millimeters))
+            feeder.setTapeWidth(Length(fp["tape_width"], LengthUnit.Millimeters))
             feeder.setEnabled(False)
+
+            # Max feed count — try the most common field names across versions
+            try:
+                feeder.setFeedCount(fp["per_feeder"])
+            except Exception:
+                pass
+            try:
+                feeder.setPartCount(fp["per_feeder"])
+            except Exception:
+                pass
 
             try:
                 feeder.setReferenceHoleLocation(z_loc)

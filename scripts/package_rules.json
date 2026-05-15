@@ -4,6 +4,7 @@
   "comment2": "pattern is matched case-insensitively against the package ID. First match wins.",
   "comment3": "nozzle uses human-readable tip name (e.g. N24). body_width/height in mm.",
   "comment4": "tape_pitch_mm: component pitch along tape (2mm for 0201/0402, 4mm for 0603+, 8mm for ICs).",
+  "comment5": "tape_width_mm: physical tape width (8mm for passives/SOT, 12-16mm for ICs).",
   "rules": [
     {
       "pattern": "0201",
@@ -11,7 +12,8 @@
       "height_mm": 0.3,
       "body_width_mm": 0.6,
       "body_height_mm": 0.3,
-      "tape_pitch_mm": 2.0
+      "tape_pitch_mm": 2.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "0402",
@@ -19,7 +21,8 @@
       "height_mm": 0.5,
       "body_width_mm": 1.0,
       "body_height_mm": 0.5,
-      "tape_pitch_mm": 2.0
+      "tape_pitch_mm": 2.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "0603",
@@ -27,7 +30,8 @@
       "height_mm": 0.8,
       "body_width_mm": 1.6,
       "body_height_mm": 0.8,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "0805",
@@ -35,7 +39,8 @@
       "height_mm": 1.0,
       "body_width_mm": 2.0,
       "body_height_mm": 1.25,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "1206",
@@ -43,7 +48,8 @@
       "height_mm": 1.2,
       "body_width_mm": 3.2,
       "body_height_mm": 1.6,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 12.0
     },
     {
       "pattern": "SOT-523",
@@ -51,7 +57,8 @@
       "height_mm": 0.9,
       "body_width_mm": 1.6,
       "body_height_mm": 0.8,
-      "tape_pitch_mm": 2.0
+      "tape_pitch_mm": 2.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "SOT-143",
@@ -59,7 +66,8 @@
       "height_mm": 1.0,
       "body_width_mm": 2.9,
       "body_height_mm": 1.3,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "SOT-23|SOT23",
@@ -67,7 +75,8 @@
       "height_mm": 1.0,
       "body_width_mm": 2.9,
       "body_height_mm": 1.3,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "SOD-123|SOD-323",
@@ -75,7 +84,8 @@
       "height_mm": 1.0,
       "body_width_mm": 2.7,
       "body_height_mm": 1.4,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "WLCSP",
@@ -83,7 +93,8 @@
       "height_mm": 0.6,
       "body_width_mm": 2.0,
       "body_height_mm": 2.0,
-      "tape_pitch_mm": 2.0
+      "tape_pitch_mm": 2.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "DFN1010|DFN2020",
@@ -91,7 +102,8 @@
       "height_mm": 0.7,
       "body_width_mm": 1.0,
       "body_height_mm": 1.0,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "DFN|SON",
@@ -99,7 +111,8 @@
       "height_mm": 0.9,
       "body_width_mm": 2.0,
       "body_height_mm": 2.0,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "VQFN|QFN",
@@ -107,7 +120,8 @@
       "height_mm": 0.9,
       "body_width_mm": 4.0,
       "body_height_mm": 4.0,
-      "tape_pitch_mm": 8.0
+      "tape_pitch_mm": 8.0,
+      "tape_width_mm": 12.0
     },
     {
       "pattern": "SOIC-8",
@@ -115,7 +129,8 @@
       "height_mm": 1.5,
       "body_width_mm": 5.0,
       "body_height_mm": 4.0,
-      "tape_pitch_mm": 8.0
+      "tape_pitch_mm": 8.0,
+      "tape_width_mm": 16.0
     },
     {
       "pattern": "SOIC",
@@ -123,7 +138,8 @@
       "height_mm": 1.7,
       "body_width_mm": 6.0,
       "body_height_mm": 5.0,
-      "tape_pitch_mm": 8.0
+      "tape_pitch_mm": 8.0,
+      "tape_width_mm": 16.0
     },
     {
       "pattern": "TSSOP",
@@ -131,7 +147,8 @@
       "height_mm": 1.2,
       "body_width_mm": 4.4,
       "body_height_mm": 3.0,
-      "tape_pitch_mm": 8.0
+      "tape_pitch_mm": 8.0,
+      "tape_width_mm": 16.0
     },
     {
       "pattern": "SOP",
@@ -139,7 +156,8 @@
       "height_mm": 1.5,
       "body_width_mm": 5.0,
       "body_height_mm": 4.0,
-      "tape_pitch_mm": 8.0
+      "tape_pitch_mm": 8.0,
+      "tape_width_mm": 16.0
     },
     {
       "pattern": "Crystal|XTAL",
@@ -147,7 +165,8 @@
       "height_mm": 1.8,
       "body_width_mm": 3.2,
       "body_height_mm": 2.5,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "TYPE-C",
@@ -155,7 +174,8 @@
       "height_mm": 2.5,
       "body_width_mm": 9.0,
       "body_height_mm": 3.5,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 12.0
     },
     {
       "pattern": "HC-1",
@@ -163,7 +183,8 @@
       "height_mm": 2.0,
       "body_width_mm": 5.0,
       "body_height_mm": 4.0,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "010E\\-20854\\-010E",
@@ -171,7 +192,8 @@
       "height_mm": 0.5,
       "body_width_mm": 2.0,
       "body_height_mm": 3.0,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     },
     {
       "pattern": "",
@@ -179,7 +201,8 @@
       "height_mm": 1.0,
       "body_width_mm": 0.0,
       "body_height_mm": 0.0,
-      "tape_pitch_mm": 4.0
+      "tape_pitch_mm": 4.0,
+      "tape_width_mm": 8.0
     }
   ]
 }
