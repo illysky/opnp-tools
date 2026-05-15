@@ -439,41 +439,6 @@ def run():
     feeders_info.sort(key=lambda x: (x["holder_idx"], x["seg_start"]))
 
     # ------------------------------------------------------------------
-    # Summary dialog
-    # ------------------------------------------------------------------
-    n_holders = len(all_holders)
-    lines = [
-        "{} feeders allocated to {} holder(s)".format(len(feeders_info), n_holders),
-    ]
-    # Show holder breakdown
-    holder_lines = []
-    prev_h = None
-    for fi in feeders_info:
-        if fi["holder_idx"] != prev_h:
-            holder_lines.append(
-                "  H{:02d} [{}]: {}".format(
-                    fi["holder_idx"] + 1, fi["holder_key"], fi["part_id"]))
-            prev_h = fi["holder_idx"]
-        else:
-            holder_lines.append("        + {}".format(fi["part_id"]))
-
-    if len(holder_lines) <= 20:
-        lines += holder_lines
-    else:
-        lines += holder_lines[:18]
-        lines.append("  ... and {} more".format(len(holder_lines) - 18))
-
-    if skipped:
-        lines.append("\n{} skipped (no/invalid tape spec)".format(len(skipped)))
-
-    ok = JOptionPane.showConfirmDialog(None,
-         _msg("\n".join(lines)),
-         DIALOG_TITLE,
-         JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
-    if ok != JOptionPane.OK_OPTION:
-        return
-
-    # ------------------------------------------------------------------
     # Interactive load loop
     # ------------------------------------------------------------------
     LOAD_OPTS = ["Load", "Skip", "Exit"]
@@ -492,14 +457,13 @@ def run():
         seg_label  = "seg {}-{}".format(seg_s + 1, seg_s + segs)
 
         info = (
-            "Part:   {}\n"
-            "Pkg:    {}\n"
-            "Tape:   {}\n"
-            "Cut:    {:.0f} mm  ({} parts)\n"
-            "Holder: H{:02d} [{}]  {}".format(
-                part_id, pkg_id, spec_str,
+            "Part:    {}\n"
+            "Cut:     {:.0f} mm\n"
+            "Qty:     {}\n"
+            "Holder:  H{:02d}  {}".format(
+                part_id,
                 cut_length, fi["max_count"],
-                h_num, fi["holder_key"], seg_label)
+                h_num, seg_label)
         )
 
         choice = JOptionPane.showOptionDialog(
