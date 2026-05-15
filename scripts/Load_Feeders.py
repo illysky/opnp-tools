@@ -310,15 +310,50 @@ def _push_frame_to_ui(camera, img):
 
 
 def _find_holes_at_current_pos(camera, pipeline=None):
-    """Capture frame, push to UI, run HoughCircles.
+    """Run sprocket hole detection at the current camera position.
+    Prefers the feeder's own pipeline (ImageCapture+BlurGaussian+DetectCircularSymmetry);
+    falls back to HoughCircles if unavailable.
     Must be called from the machine task thread."""
+
+    if pipeline is not None:
+        try:
+            pipeline.setProperty("camera", camera)
+            pipeline.process()
+
+            # Push the captured working image to the UI
+            try:
+                mat = pipeline.getWorkingImage()
+                if mat is not None:
+                    img = OpenCvUtils.toBufferedImage(mat)
+                    _push_frame_to_ui(camera, img)
+            except Exception:
+                pass
+
+            result = pipeline.getResult("results")
+            if result is not None and result.model is not None:
+                circles_px = list(result.model)
+                locs = []
+                for c in circles_px:
+                    # DetectCircularSymmetry returns coords relative to image center
+                    loc = VisionUtils.getPixelLocation(camera, c.x, c.y)
+                    locs.append(loc)
+                locs.sort(key=lambda l: l.getY())
+                _set_status("  Pipeline: {} circle(s)".format(len(locs)))
+                for l in locs:
+                    _set_status("    X={:.2f} Y={:.2f}".format(l.getX(), l.getY()))
+                return locs
+            else:
+                _set_status("  Pipeline: no result model")
+        except Exception as e:
+            _set_status("  Pipeline error, falling back: {}".format(e))
+
+    # Fallback: raw HoughCircles
     try:
         img = camera.lightSettleAndCapture()
         if img is not None:
             _push_frame_to_ui(camera, img)
-    except Exception as e:
-        _set_status("  Capture error: {}".format(e))
-
+    except Exception:
+        pass
     try:
         circles = list(OpenCvUtils.houghCircles(
             camera,
@@ -326,13 +361,9 @@ def _find_holes_at_current_pos(camera, pipeline=None):
             SPROCKET_HOLE_DIA_MAX,
             SPROCKET_HOLE_MIN_DIST))
         circles.sort(key=lambda c: c.getY())
-        _set_status("  HoughCircles(dia {}-{}mm, minDist {}mm): {} hit(s)".format(
-            SPROCKET_HOLE_DIA_MIN.getValue(),
-            SPROCKET_HOLE_DIA_MAX.getValue(),
-            SPROCKET_HOLE_MIN_DIST.getValue(),
-            len(circles)))
+        _set_status("  HoughCircles fallback: {} hit(s)".format(len(circles)))
         for c in circles:
-            _set_status("    circle X={:.2f} Y={:.2f}".format(c.getX(), c.getY()))
+            _set_status("    X={:.2f} Y={:.2f}".format(c.getX(), c.getY()))
         return circles
     except Exception as e:
         _set_status("  HoughCircles error: {}".format(e))
@@ -416,7 +447,7 @@ def _auto_find_holes(camera, start_x, start_y, z):
 # Full-holder auto scan
 # ---------------------------------------------------------------------------
 
-def _scan_holder(camera, nominal_x, start_y, scan_mm, z):
+def _scan_holder(camera, nominal_x, start_y, scan_mm, z, pipeline=None):
     """Scan an entire holder in one machine task.
     Uses feeder pipeline for detection when provided; falls back to HoughCircles.
     Self-corrects X from the first detected hole pair (3D-print drift compensation).
@@ -434,7 +465,7 @@ def _scan_holder(camera, nominal_x, start_y, scan_mm, z):
             except Exception:
                 detections.append((scan_y, []))
                 continue
-            circles = _find_holes_at_current_pos(camera)
+            circles = _find_holes_at_current_pos(camera, pipeline)
             pairs   = _all_hole_pairs(circles)
             detections.append((scan_y, pairs))
             _set_status("x={:.2f} Y={:.1f}: {} circle(s) {} pair(s)".format(
@@ -578,8 +609,15 @@ def run_auto(cfg, camera, feeders_info, holder_cfg):
         _set_status("Scanning slot {} (x={:.1f}) for {} feeder(s)...".format(
             holder_idx + 1, x, len(feeders)))
 
+        pipeline = None
         try:
-            detections = _scan_holder(camera, x, start_y, scan_mm, z)
+            pipeline = feeders[0]["feeder"].getPipeline()
+            _set_status("  Using feeder pipeline from {}".format(feeders[0]["part_id"]))
+        except Exception:
+            _set_status("  No pipeline available, using HoughCircles fallback")
+
+        try:
+            detections = _scan_holder(camera, x, start_y, scan_mm, z, pipeline)
         except Exception as e:
             _set_status("Holder {} scan failed: {}".format(holder_idx + 1, e))
             for fi in feeders:
@@ -835,8 +873,15 @@ def run():
 
         _set_status("Scanning slot {} (x={:.2f})...".format(h_num, x_holder))
 
+        pipeline = None
         try:
-            detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg)
+            pipeline = flist[0]["feeder"].getPipeline()
+            _set_status("  Using feeder pipeline from {}".format(flist[0]["part_id"]))
+        except Exception:
+            _set_status("  No pipeline available, using HoughCircles fallback")
+
+        try:
+            detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg, pipeline)
         except Exception as e:
             JOptionPane.showMessageDialog(None,
                 _msg("Scan failed for slot {}:\n{}".format(h_num, e)),
