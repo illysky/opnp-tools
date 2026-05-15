@@ -72,8 +72,8 @@ CONFIG_FILE = os.path.expanduser(
     "~/.openpnp2/scripts/illysky/holder_config.json")
 
 DEFAULT_CONFIG = {
-    "start_x":    0.0,
-    "start_y":    0.0,
+    "start_x":    6.628,
+    "start_y":    230.016,
     "z":          4.2,
     "spacing_x":  10.0,
     "segment_mm": SEGMENT_MM,
