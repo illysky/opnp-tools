@@ -114,7 +114,7 @@ def run():
         try:
             h = pkg.getHeight()
             if h is not None:
-                height_mm = h.convertToUnits(LengthUnit.Millimeters).getValue()
+                height_mm = round(h.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
         except Exception:
             pass
 
@@ -122,8 +122,8 @@ def run():
         try:
             fp = pkg.getFootprint()
             if fp is not None:
-                bw = fp.getBodyWidth()
-                bh = fp.getBodyHeight()
+                bw = round(fp.getBodyWidth(),  3)
+                bh = round(fp.getBodyHeight(), 3)
         except Exception:
             pass
 
