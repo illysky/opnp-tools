@@ -535,9 +535,10 @@ def run():
         # 2. Capture reference hole 1
         hole1 = _capture_hole(
             camera,
-            "Load the tape, then jog the camera to\n"
-            "REFERENCE HOLE 1 and click OK.\n\n"
-            "Part: {}  Holder H{:02d} {}".format(part_id, h_num, seg_label))
+            "Camera moved to holder H{:02d} {}.\n\n"
+            "Load the tape, then use the jog controls to align\n"
+            "the camera crosshair over SPROCKET HOLE 1.\n\n"
+            "Click OK when centred on hole 1.".format(h_num, seg_label))
         if hole1 is None:
             skipped_load += 1
             continue
@@ -545,9 +546,9 @@ def run():
         # 3. Capture reference hole 2
         hole2 = _capture_hole(
             camera,
-            "Jog the camera to REFERENCE HOLE 2\n"
-            "(next sprocket hole along the tape) and click OK.\n\n"
-            "Part: {}  Holder H{:02d} {}".format(part_id, h_num, seg_label))
+            "Now align the crosshair over the NEXT SPROCKET HOLE\n"
+            "(hole 2, along the tape direction).\n\n"
+            "Click OK when centred on hole 2.".format())
         if hole2 is None:
             skipped_load += 1
             continue
