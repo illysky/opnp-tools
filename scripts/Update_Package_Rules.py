@@ -138,7 +138,7 @@ def run():
 
         matched = _find_rule(pkg_id, specific_rules)
 
-        # Read tape spec string set by Config Parts from Board
+        # Read tape spec string set by Create Parts
         tape_spec_str = None
         try:
             ts = pkg.getTapeSpecification()

@@ -1,5 +1,5 @@
 """
-Config Parts from Board
+Create Parts
 =======================
 OpenPnP Jython script — appears in the Scripts menu automatically.
 
@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 
 from javax.swing import (JOptionPane, JComboBox, JPanel, JLabel, BoxLayout)
 
-DIALOG_TITLE = "Config Parts from Board"
+DIALOG_TITLE = "Create Parts"
 DIALOG_WIDTH = 300   # px — keeps all popups the same width
 
 def _msg(text):

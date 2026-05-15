@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Package rules used by Config_Parts_from_Board, Update_Package_Rules and Create_Feeders scripts.",
+  "comment": "Package rules used by Create_Parts, Update_Package_Rules and Create_Feeders scripts.",
   "comment2": "pattern is matched case-insensitively against the package ID. First match wins.",
   "comment3": "nozzle uses human-readable tip name (e.g. N24). body_width/height in mm.",
   "comment4": "tape_spec format: '{width}-{thickness*100}-{colour}-{pitch}'  e.g. '8-70-W-2'",

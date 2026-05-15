@@ -268,7 +268,7 @@ def run():
     if not feeder_plan:
         JOptionPane.showMessageDialog(None,
             _msg("No known parts found in the board.\n"
-                 "Run 'Config Parts from Board' first."),
+                 "Run 'Create Parts' first."),
             DIALOG_TITLE, JOptionPane.WARNING_MESSAGE)
         return
 
