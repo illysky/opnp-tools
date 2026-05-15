@@ -317,9 +317,13 @@ def run():
             machine.removeFeeder(feeder)
 
     # ------------------------------------------------------------------
-    # Create feeders
+    # Create feeders — names are sequential per tape width group
+    #   8mm  -> 8MM-01, 8MM-02, ...
+    #   12mm -> 12MM-01, 12MM-02, ...
+    #   16mm -> 16MM-01, 16MM-02, ...
     # ------------------------------------------------------------------
-    created = 0
+    created  = 0
+    seq_by_width = {}   # tape_width (int) -> next sequence number
 
     for fp in feeder_plan:
         # Z = user value + tape thickness so nozzle reaches into the pocket
@@ -327,10 +331,10 @@ def run():
         z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 0.0)
 
         for i in range(fp["num_feeders"]):
-            if fp["num_feeders"] > 1:
-                name = "{}_F{}_x{}".format(fp["part_id"], i + 1, fp["per_feeder"])
-            else:
-                name = "{}_x{}".format(fp["part_id"], fp["per_feeder"])
+            w_key = int(fp["tape_width"])
+            seq   = seq_by_width.get(w_key, 1)
+            seq_by_width[w_key] = seq + 1
+            name  = "{}MM-{:02d}".format(w_key, seq)
 
             feeder = ReferenceStripFeeder()
             feeder.setName(name)
