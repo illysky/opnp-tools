@@ -143,6 +143,13 @@
       "height_mm": 2.0
     }, 
     {
+      "body_height_mm": 3.0, 
+      "body_width_mm": 2.0, 
+      "pattern": "010E\\-20854\\-010E", 
+      "nozzle": "N24", 
+      "height_mm": 0.5
+    }, 
+    {
       "body_height_mm": 0.0, 
       "body_width_mm": 0.0, 
       "pattern": "", 

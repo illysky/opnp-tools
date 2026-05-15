@@ -17,8 +17,7 @@ Run this after tweaking packages or part heights in the OpenPnP UI.
 """
 
 from __future__ import absolute_import
-import os, re, json, shutil
-from datetime import datetime
+import os, re, json
 
 from javax.swing import JOptionPane
 
@@ -36,12 +35,8 @@ def _load_rules():
 
 
 def _save_rules(data):
-    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bak = RULES_FILE + "." + ts + ".bak"
-    shutil.copy2(RULES_FILE, bak)
     with open(RULES_FILE, "w") as f:
         json.dump(data, f, indent=2)
-    return bak
 
 
 def _get_nozzle_name(pkg, id_to_name):
@@ -192,18 +187,16 @@ def run():
 
     # -----------------------------------------------------------------------
     if pkg_updated == 0 and pkg_added == 0 and part_updated == 0:
-        JOptionPane.showMessageDialog(None,
-            "No changes needed — rules already match OpenPnP.",
+        JOptionPane.showMessageDialog(None, "No changes.",
             "Update Package Rules", JOptionPane.INFORMATION_MESSAGE)
         return
 
-    bak = _save_rules(data)
+    _save_rules(data)
 
     JOptionPane.showMessageDialog(None,
-        "Packages: {} updated, {} added\n"
-        "Parts:    {} height(s) updated\n\n"
-        "Backup: {}".format(pkg_updated, pkg_added, part_updated, bak),
-        "Update Package Rules \u2014 Done", JOptionPane.INFORMATION_MESSAGE)
+        "{} Package Added\n{} Package Updated\n{} Part Updated".format(
+            pkg_added, pkg_updated, part_updated),
+        "Update Package Rules", JOptionPane.INFORMATION_MESSAGE)
 
 
 run()
