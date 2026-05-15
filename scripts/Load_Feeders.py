@@ -76,7 +76,7 @@ DEFAULT_CONFIG = {
     "start_x":    6.628,
     "start_y":    230.016,
     "z":          4.2,
-    "spacing_x":  10.0,
+    "spacing_x":  12.0,
     "segment_mm": SEGMENT_MM,
 }
 
