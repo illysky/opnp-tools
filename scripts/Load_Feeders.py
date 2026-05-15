@@ -767,96 +767,105 @@ def run():
         return
 
     # ------------------------------------------------------------------
-    # Interactive load loop
+    # Interactive load loop — holder by holder
     # ------------------------------------------------------------------
-    LOAD_OPTS = ["Load", "Skip", "Exit"]
-    loaded = 0
-    skipped_load = 0
+    from collections import OrderedDict
 
+    by_holder = OrderedDict()
     for fi in feeders_info:
-        feeder     = fi["feeder"]
-        part_id    = fi["part_id"]
-        pkg_id     = fi["pkg_id"]
-        spec_str   = fi["spec_str"]
-        cut_length = fi["cut_length"]
-        h_num      = fi["holder_idx"] + 1
-        seg_s      = fi["seg_start"]
-        segs       = fi["segs_used"]
-        seg_label  = "seg {}-{}".format(seg_s + 1, seg_s + segs)
+        by_holder.setdefault(fi["holder_idx"], []).append(fi)
 
-        info = (
-            "Part:    {}\n"
-            "Cut:     {:.0f} mm\n"
-            "Qty:     {}\n"
-            "Holder:  H{:02d}  {}".format(
-                part_id,
-                cut_length, fi["max_count"],
-                h_num, seg_label)
-        )
+    holder_list = list(by_holder.items())   # [(holder_idx, [fi, ...]), ...]
+    total_holders = len(holder_list)
+    loaded       = 0
+    skipped_load = 0
+    h_idx        = 0   # current position in holder_list
+
+    while 0 <= h_idx < total_holders:
+        holder_idx, flist = holder_list[h_idx]
+        h_num  = holder_idx + 1
+        h_key  = flist[0]["holder_key"]
+        is_first = (h_idx == 0)
+        is_last  = (h_idx == total_holders - 1)
+
+        # Build component list for this holder
+        part_lines = []
+        for fi in flist:
+            seg_label = "seg {}-{}".format(fi["seg_start"] + 1,
+                                           fi["seg_start"] + fi["segs_used"])
+            part_lines.append(
+                "&nbsp;&nbsp;• &nbsp;<b>{}</b>"
+                " &nbsp; {} pcs &nbsp; {:.0f}mm cut"
+                " &nbsp; [{}] &nbsp; <i>{}</i>".format(
+                    fi["part_id"], fi["max_count"],
+                    fi["cut_length"], fi["spec_str"], seg_label))
+
+        body = ("<b>H{:02d} &nbsp; {}</b><br><br>"
+                "Load these tape(s), then click Scan:<br><br>"
+                "{}".format(h_num, h_key, "<br>".join(part_lines)))
+
+        if is_last:
+            btns = (["← Back", "Scan", "Exit"] if not is_first
+                    else ["Scan", "Exit"])
+        else:
+            btns = (["← Back", "Scan & Next →", "Exit"] if not is_first
+                    else ["Scan & Next →", "Exit"])
 
         choice = JOptionPane.showOptionDialog(
-            None, _msg(info), DIALOG_TITLE,
+            None, _msg(body),
+            "{} — {}/{}".format(DIALOG_TITLE, h_idx + 1, total_holders),
             JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
-            None, LOAD_OPTS, LOAD_OPTS[0])
+            None, btns, btns[0])
 
-        if choice == 2 or choice == JOptionPane.CLOSED_OPTION:
-            break   # Exit
+        if choice == JOptionPane.CLOSED_OPTION or btns[choice] == "Exit":
+            break
 
-        if choice == 1:
-            skipped_load += 1
-            continue   # Skip
-
-        # ---- Load ----
-
-        # 1. Ask user to load tape, then confirm ready
-        ok = JOptionPane.showConfirmDialog(None,
-            _msg("Load tape for:\n\n"
-                 "Part:  {}\n"
-                 "Cut:   {:.0f} mm  ({} parts)\n\n"
-                 "Place the tape in H{:02d} {} and click OK.\n"
-                 "The camera will then scan for sprocket holes automatically.".format(
-                     part_id, cut_length, fi["max_count"], h_num, seg_label)),
-            DIALOG_TITLE,
-            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
-        if ok != JOptionPane.OK_OPTION:
-            skipped_load += 1
+        if btns[choice] == "← Back":
+            h_idx -= 1
             continue
 
-        # 2. Move to segment start
-        x_holder = holder_cfg["start_x"] + fi["holder_idx"] * holder_cfg["spacing_x"]
-        y_seg    = holder_cfg["start_y"] + seg_s * holder_cfg["segment_mm"]
+        # ---- Scan this holder ----
+        x_holder = holder_cfg["start_x"] + holder_idx * holder_cfg["spacing_x"]
+        start_y  = holder_cfg["start_y"]
         z_cfg    = holder_cfg["z"]
 
-        if not _move_camera_to_holder_task(camera, holder_cfg, fi["holder_idx"], seg_s):
-            skipped_load += 1
-            continue
+        _set_status("Interactive scan: holder {} (x={:.2f})".format(h_num, x_holder))
 
-        # 3. Auto-scan for two sprocket holes
-        hole1, hole2 = _auto_find_holes(camera, x_holder, y_seg, z_cfg)
-
-        if hole1 is None:
-            JOptionPane.showMessageDialog(None,
-                _msg("Could not find two sprocket holes in H{:02d} {}.\n\n"
-                     "Check the tape is loaded and the camera Z height is correct.\n"
-                     "Feeder {} was NOT configured.".format(
-                         h_num, seg_label, part_id)),
-                DIALOG_TITLE, JOptionPane.WARNING_MESSAGE)
-            skipped_load += 1
-            continue
-
-        # 4. Apply to feeder and enable
         try:
-            feeder.setReferenceHoleLocation(hole1)
-            feeder.setLastHoleLocation(hole2)
-            feeder.setFeedCount(0)
-            feeder.setEnabled(True)
-            cfg.save()
-            loaded += 1
+            detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg)
         except Exception as e:
             JOptionPane.showMessageDialog(None,
-                _msg("Failed to configure feeder {}:\n{}".format(
-                    feeder.getName(), e)),
+                _msg("Scan failed for H{:02d}:\n{}".format(h_num, e)),
                 DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
+            h_idx += 1
+            continue
+
+        zones = _zones_from_detections(detections)
+        _set_status("H{:02d}: {} zone(s) found, {} feeder(s)".format(
+            h_num, len(zones), len(flist)))
+
+        for i, fi in enumerate(flist):
+            if i >= len(zones):
+                _set_status("  No zone for {}".format(fi["part_id"]))
+                skipped_load += 1
+                continue
+            _, hole1, hole2 = zones[i]
+            feeder = fi["feeder"]
+            try:
+                feeder.setReferenceHoleLocation(hole1)
+                feeder.setLastHoleLocation(hole2)
+                feeder.setFeedCount(0)
+                feeder.setEnabled(True)
+                loaded += 1
+                _set_status("  Configured {}".format(fi["part_id"]))
+            except Exception as e:
+                JOptionPane.showMessageDialog(None,
+                    _msg("Failed to configure {}:\n{}".format(fi["part_id"], e)),
+                    DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
+                skipped_load += 1
+
+        cfg.save()
+        h_idx += 1
 
     # ------------------------------------------------------------------
     # Done
