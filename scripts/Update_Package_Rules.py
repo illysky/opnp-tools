@@ -138,8 +138,17 @@ def run():
 
         matched = _find_rule(pkg_id, specific_rules)
 
+        # Read tape spec string set by Config Parts from Board
+        tape_spec_str = None
+        try:
+            ts = pkg.getTapeSpecification()
+            if ts and ts.count("-") >= 3:   # looks like our 4-part format
+                tape_spec_str = ts.strip()
+        except Exception:
+            pass
+
         if matched is not None:
-            if not nozzle_name and bw == 0.0 and bh == 0.0:
+            if not nozzle_name and bw == 0.0 and bh == 0.0 and not tape_spec_str:
                 continue
             changed = False
             if nozzle_name and matched.get("nozzle") != nozzle_name:
@@ -148,6 +157,8 @@ def run():
                 matched["body_width_mm"] = bw;          changed = True
             if bh > 0.0 and matched.get("body_height_mm", 0.0) != bh:
                 matched["body_height_mm"]= bh;          changed = True
+            if tape_spec_str and matched.get("tape_spec") != tape_spec_str:
+                matched["tape_spec"]     = tape_spec_str; changed = True
             if changed:
                 pkg_updated += 1
 
@@ -200,30 +211,26 @@ def run():
             part_updated += 1
 
     # -----------------------------------------------------------------------
-    # Pass 3: feeders → tape_spec (width part), tape_pitch_mm
+    # Pass 3: feeders → pitch back-fill
     #
-    # OpenPnP stores tape width and pitch on the feeder object.
-    # When the user changes those in the UI we read them back and update:
-    #   - The width field inside tape_spec (thickness + colour are preserved)
-    #   - tape_pitch_mm
+    # tape_spec (incl. width/thickness/colour) is read directly from
+    # Package.getTapeSpecification() in Pass 1.  Here we only read
+    # partPitch from feeders to keep the pitch component in sync if
+    # the user adjusts it on a feeder without touching the package.
     # -----------------------------------------------------------------------
-    def _parse_tape_spec(spec):
-        """Return (width_float, thick_str, colour_str, pitch_str)."""
+    def _ts_parts(spec):
+        """Return (w_str, th_str, col_str, p_str) from a tape_spec string."""
         try:
             p = spec.split("-")
-            return (float(p[0]),
-                    p[1] if len(p) > 1 else "35",
+            return (p[0], p[1] if len(p) > 1 else "35",
                     p[2].upper() if len(p) > 2 else "B",
                     p[3] if len(p) > 3 else "4")
         except Exception:
-            return 8.0, "35", "B", "4"
+            return "8", "35", "B", "4"
 
     try:
         machine = cfg.getMachine()
-        # Collect the best (most common) tape width per package to avoid
-        # a single outlier feeder overwriting a correct rule.
-        pkg_tape_widths = {}   # pkg_id -> {width: count}
-        pkg_tape_pitches = {}  # pkg_id -> {pitch: count}
+        pitch_votes = {}   # pkg_id -> {pitch_str: count}
 
         for feeder in machine.getFeeders():
             part = feeder.getPart()
@@ -233,58 +240,25 @@ def run():
             pkg_id = pkg.getId() if pkg is not None else ""
             if not pkg_id or FIDUCIAL_PATTERN.search(pkg_id):
                 continue
-
-            try:
-                w = feeder.getTapeWidth()
-                if w is not None:
-                    tw = round(w.convertToUnits(LengthUnit.Millimeters).getValue(), 1)
-                    if tw > 0.0:
-                        pkg_tape_widths.setdefault(pkg_id, {})
-                        pkg_tape_widths[pkg_id][tw] = pkg_tape_widths[pkg_id].get(tw, 0) + 1
-            except Exception:
-                pass
             try:
                 p = feeder.getPartPitch()
                 if p is not None:
                     tp = round(p.convertToUnits(LengthUnit.Millimeters).getValue(), 2)
                     if tp > 0.0:
-                        pkg_tape_pitches.setdefault(pkg_id, {})
-                        pkg_tape_pitches[pkg_id][tp] = pkg_tape_pitches[pkg_id].get(tp, 0) + 1
+                        ps = str(int(tp)) if tp == int(tp) else str(tp)
+                        pitch_votes.setdefault(pkg_id, {})
+                        pitch_votes[pkg_id][ps] = pitch_votes[pkg_id].get(ps, 0) + 1
             except Exception:
                 pass
 
-        for pkg_id in set(list(pkg_tape_widths.keys()) + list(pkg_tape_pitches.keys())):
+        for pkg_id, votes in pitch_votes.items():
             matched = _find_rule(pkg_id, specific_rules)
             if matched is None:
                 continue
-
-            changed = False
-
-            cur_w, thick_part, colour_part, pitch_part = _parse_tape_spec(
-                matched.get("tape_spec", "8-35-B-4"))
-            new_w     = cur_w
-            new_pitch = pitch_part
-
-            # Most-common tape width for this package
-            if pkg_id in pkg_tape_widths:
-                best_w = max(pkg_tape_widths[pkg_id], key=pkg_tape_widths[pkg_id].get)
-                if best_w != cur_w:
-                    new_w   = best_w
-                    changed = True
-
-            # Most-common tape pitch for this package
-            if pkg_id in pkg_tape_pitches:
-                best_p = max(pkg_tape_pitches[pkg_id], key=pkg_tape_pitches[pkg_id].get)
-                best_p_str = str(int(best_p)) if best_p == int(best_p) else str(best_p)
-                if best_p_str != pitch_part:
-                    new_pitch = best_p_str
-                    changed   = True
-
-            if changed:
-                matched["tape_spec"] = "{}-{}-{}-{}".format(
-                    int(new_w), thick_part, colour_part, new_pitch)
-
-            if changed:
+            best_p = max(votes, key=votes.get)
+            w, th, col, cur_p = _ts_parts(matched.get("tape_spec", "8-35-B-4"))
+            if best_p != cur_p:
+                matched["tape_spec"] = "{}-{}-{}-{}".format(w, th, col, best_p)
                 feeder_updated += 1
     except Exception:
         pass
