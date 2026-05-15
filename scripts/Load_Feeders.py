@@ -407,16 +407,18 @@ def _auto_find_holes(camera, start_x, start_y, z):
 # Full-holder auto scan
 # ---------------------------------------------------------------------------
 
-def _scan_holder(camera, x, start_y, scan_mm, z):
+def _scan_holder(camera, nominal_x, start_y, scan_mm, z):
     """Scan an entire holder in one machine task.
+    Self-corrects X from the first detected hole pair (3D-print drift compensation).
     Returns list of (scan_y, pairs) for every step."""
     detections  = []
     total_steps = int(math.ceil(scan_mm / SCAN_STEP_MM)) + 1
+    current_x   = [nominal_x]   # mutable so inner fn can update it
 
     def scan():
         for step in range(total_steps):
             scan_y = start_y + step * SCAN_STEP_MM
-            target = Location(LengthUnit.Millimeters, x, scan_y, z, 90.0)
+            target = Location(LengthUnit.Millimeters, current_x[0], scan_y, z, 90.0)
             try:
                 _move_direct(camera, target)
             except Exception:
@@ -425,8 +427,17 @@ def _scan_holder(camera, x, start_y, scan_mm, z):
             circles = _find_holes_at_current_pos(camera)
             pairs   = _all_hole_pairs(circles)
             detections.append((scan_y, pairs))
-            _set_status("H x={:.1f} Y={:.1f}: {} circle(s) {} pair(s)".format(
-                x, scan_y, len(circles), len(pairs)))
+            _set_status("H x={:.2f} Y={:.1f}: {} circle(s) {} pair(s)".format(
+                current_x[0], scan_y, len(circles), len(pairs)))
+
+            # X self-correction: use first detected pair to recalibrate X
+            if pairs and current_x[0] == nominal_x:
+                h1, h2   = pairs[0]
+                actual_x = (h1.getX() + h2.getX()) / 2.0
+                drift    = actual_x - nominal_x
+                current_x[0] = actual_x
+                _set_status("  X corrected: nominal {:.2f} → actual {:.2f} (drift {:.2f}mm)".format(
+                    nominal_x, actual_x, drift))
 
     submitUiMachineTask(scan).get()
     return detections
@@ -471,6 +482,59 @@ def _zones_from_detections(detections):
             zone_start, best[0].getY(), best[1].getY()))
 
     return zones
+
+
+def _loading_guide(feeders_info):
+    """Walk the user through loading tapes holder by holder with Back/Next.
+    Returns True when user confirms all loaded, False if cancelled."""
+    from collections import OrderedDict
+
+    # Build ordered list of holders with their feeders
+    holders = OrderedDict()
+    for fi in sorted(feeders_info, key=lambda f: (f["holder_idx"], f["seg_start"])):
+        holders.setdefault(fi["holder_idx"], []).append(fi)
+
+    pages   = []
+    for holder_idx, flist in holders.items():
+        key = flist[0]["holder_key"]
+        lines = ["<b>H{:02d} &nbsp; {} holder</b><br><br>".format(holder_idx + 1, key)]
+        for fi in flist:
+            lines.append("&nbsp;&nbsp;• &nbsp;<b>{}</b> &nbsp; {:.0f}mm tape &nbsp; ({} parts)".format(
+                fi["part_id"], fi["cut_length"], fi["max_count"]))
+        pages.append("<br>".join(lines))
+
+    total = len(pages)
+    idx   = 0
+
+    while True:
+        is_first = (idx == 0)
+        is_last  = (idx == total - 1)
+
+        if is_last:
+            btn_labels = ["← Back", "Start Scan", "Cancel"] if not is_first else ["Start Scan", "Cancel"]
+        else:
+            btn_labels = ["← Back", "Next →", "Cancel"] if not is_first else ["Next →", "Cancel"]
+
+        header = "Loading guide  {}/{}".format(idx + 1, total)
+        choice = JOptionPane.showOptionDialog(
+            None,
+            _msg("Load into holder:<br><br>" + pages[idx]),
+            DIALOG_TITLE + "  —  " + header,
+            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
+            None, btn_labels, btn_labels[0])
+
+        if choice == JOptionPane.CLOSED_OPTION:
+            return False
+
+        label = btn_labels[choice]
+        if label == "Cancel":
+            return False
+        elif label == "← Back":
+            idx -= 1
+        elif label == "Next →":
+            idx += 1
+        elif label == "Start Scan":
+            return True
 
 
 def run_auto(cfg, camera, feeders_info, holder_cfg):
@@ -697,14 +761,7 @@ def run():
     # Auto scan mode
     # ------------------------------------------------------------------
     if mode == 0:
-        ok = JOptionPane.showConfirmDialog(None,
-            _msg("Load ALL {} tape(s) into their holders now.\n\n"
-                 "The camera will scan every holder automatically\n"
-                 "and configure all feeders without further prompts.\n\n"
-                 "Click OK when all tapes are loaded.".format(len(feeders_info))),
-            DIALOG_TITLE,
-            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
-        if ok != JOptionPane.OK_OPTION:
+        if not _loading_guide(feeders_info):
             return
         run_auto(cfg, camera, feeders_info, holder_cfg)
         return
