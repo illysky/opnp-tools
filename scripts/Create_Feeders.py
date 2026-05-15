@@ -66,13 +66,34 @@ def _load_rules():
         return []
 
 
+def _parse_tape_spec(spec):
+    """Parse '8-35-B' -> (width_mm=8.0, thickness_mm=0.35, colour='B').
+
+    Format: '{width}-{thickness*100}-{colour}'
+      width     : 8 | 12 | 16
+      thickness : 35=0.35mm  70=0.70mm  100=1.0mm
+      colour    : B=black  W=white  C=clear
+    Returns defaults (8.0, 0.35, 'B') on any parse error.
+    """
+    try:
+        parts = spec.split("-")
+        width     = float(parts[0])
+        thickness = float(parts[1]) / 100.0
+        colour    = parts[2].upper() if len(parts) > 2 else "B"
+        return width, thickness, colour
+    except Exception:
+        return 8.0, 0.35, "B"
+
+
 def _lookup_tape(pkg_id, rules):
-    """Return (tape_pitch_mm, tape_width_mm) for pkg_id from rules."""
+    """Return (pitch_mm, width_mm, thickness_mm) for pkg_id from rules."""
     for rule in rules:
         pattern = rule.get("pattern", "")
         if pattern and re.search(pattern, pkg_id, re.IGNORECASE):
-            return float(rule.get("tape_pitch_mm", 4.0)), float(rule.get("tape_width_mm", 8.0))
-    return 4.0, 8.0
+            pitch = float(rule.get("tape_pitch_mm", 4.0))
+            width, thickness, _ = _parse_tape_spec(rule.get("tape_spec", "8-70-B"))
+            return pitch, width, thickness
+    return 4.0, 8.0, 0.70
 
 
 def _count_placements(board):
@@ -225,7 +246,7 @@ def run():
 
         pkg    = part.getPackage()
         pkg_id = pkg.getId() if pkg else ""
-        pitch, tape_w = _lookup_tape(pkg_id, rules)
+        pitch, tape_w, tape_t = _lookup_tape(pkg_id, rules)
 
         total_qty   = int(math.ceil(board_count * build_size * (1.0 + attrition)))
         tape_mm     = total_qty * pitch
@@ -233,12 +254,13 @@ def run():
         per_feeder  = int(math.ceil(float(total_qty) / num_feeders))
 
         feeder_plan.append({
-            "part_id":     part_id,
-            "part":        part,
-            "pitch":       pitch,
-            "tape_width":  tape_w,
-            "num_feeders": num_feeders,
-            "per_feeder":  per_feeder,
+            "part_id":        part_id,
+            "part":           part,
+            "pitch":          pitch,
+            "tape_width":     tape_w,
+            "tape_thickness": tape_t,
+            "num_feeders":    num_feeders,
+            "per_feeder":     per_feeder,
         })
 
     if not feeder_plan:
@@ -251,10 +273,13 @@ def run():
     # ------------------------------------------------------------------
     # Create feeders
     # ------------------------------------------------------------------
-    z_loc   = Location(LengthUnit.Millimeters, 0.0, 0.0, feeder_z, 0.0)
     created = 0
 
     for fp in feeder_plan:
+        # Z = user value + tape thickness (component sits on top of the tape pocket)
+        pick_z = feeder_z + fp["tape_thickness"]
+        z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 0.0)
+
         for i in range(fp["num_feeders"]):
             if fp["num_feeders"] > 1:
                 name = "{}_F{}_x{}".format(fp["part_id"], i + 1, fp["per_feeder"])
@@ -268,7 +293,7 @@ def run():
             feeder.setTapeWidth(Length(fp["tape_width"], LengthUnit.Millimeters))
             feeder.setEnabled(False)
 
-            # Max feed count — try the most common field names across versions
+            # Feed count — try common field names across OpenPnP versions
             try:
                 feeder.setFeedCount(fp["per_feeder"])
             except Exception:

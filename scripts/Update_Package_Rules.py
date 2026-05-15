@@ -200,10 +200,28 @@ def run():
             part_updated += 1
 
     # -----------------------------------------------------------------------
-    # Pass 3: feeders → tape_width_mm, tape_pitch_mm
+    # Pass 3: feeders → tape_spec (width part), tape_pitch_mm
+    #
+    # OpenPnP stores tape width and pitch on the feeder object.
+    # When the user changes those in the UI we read them back and update:
+    #   - The width field inside tape_spec (thickness + colour are preserved)
+    #   - tape_pitch_mm
     # -----------------------------------------------------------------------
+    def _parse_tape_spec(spec):
+        try:
+            parts = spec.split("-")
+            return float(parts[0]), parts[1] if len(parts) > 1 else "70", \
+                   parts[2].upper() if len(parts) > 2 else "B"
+        except Exception:
+            return 8.0, "70", "B"
+
     try:
         machine = cfg.getMachine()
+        # Collect the best (most common) tape width per package to avoid
+        # a single outlier feeder overwriting a correct rule.
+        pkg_tape_widths = {}   # pkg_id -> {width: count}
+        pkg_tape_pitches = {}  # pkg_id -> {pitch: count}
+
         for feeder in machine.getFeeders():
             part = feeder.getPart()
             if part is None:
@@ -213,32 +231,49 @@ def run():
             if not pkg_id or FIDUCIAL_PATTERN.search(pkg_id):
                 continue
 
-            tw, tp = 0.0, 0.0
             try:
                 w = feeder.getTapeWidth()
                 if w is not None:
-                    tw = round(w.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
+                    tw = round(w.convertToUnits(LengthUnit.Millimeters).getValue(), 1)
+                    if tw > 0.0:
+                        pkg_tape_widths.setdefault(pkg_id, {})
+                        pkg_tape_widths[pkg_id][tw] = pkg_tape_widths[pkg_id].get(tw, 0) + 1
             except Exception:
                 pass
             try:
                 p = feeder.getPartPitch()
                 if p is not None:
-                    tp = round(p.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
+                    tp = round(p.convertToUnits(LengthUnit.Millimeters).getValue(), 2)
+                    if tp > 0.0:
+                        pkg_tape_pitches.setdefault(pkg_id, {})
+                        pkg_tape_pitches[pkg_id][tp] = pkg_tape_pitches[pkg_id].get(tp, 0) + 1
             except Exception:
                 pass
 
-            if tw == 0.0 and tp == 0.0:
-                continue
-
+        for pkg_id in set(list(pkg_tape_widths.keys()) + list(pkg_tape_pitches.keys())):
             matched = _find_rule(pkg_id, specific_rules)
             if matched is None:
                 continue
 
             changed = False
-            if tw > 0.0 and matched.get("tape_width_mm", 0.0) != tw:
-                matched["tape_width_mm"] = tw;  changed = True
-            if tp > 0.0 and matched.get("tape_pitch_mm", 0.0) != tp:
-                matched["tape_pitch_mm"] = tp;  changed = True
+
+            # Most-common tape width for this package
+            if pkg_id in pkg_tape_widths:
+                best_w = max(pkg_tape_widths[pkg_id], key=pkg_tape_widths[pkg_id].get)
+                cur_w, thick_part, colour_part = _parse_tape_spec(
+                    matched.get("tape_spec", "8-70-B"))
+                if best_w != cur_w:
+                    matched["tape_spec"] = "{}-{}-{}".format(
+                        int(best_w), thick_part, colour_part)
+                    changed = True
+
+            # Most-common tape pitch for this package
+            if pkg_id in pkg_tape_pitches:
+                best_p = max(pkg_tape_pitches[pkg_id], key=pkg_tape_pitches[pkg_id].get)
+                if matched.get("tape_pitch_mm", 0.0) != best_p:
+                    matched["tape_pitch_mm"] = best_p
+                    changed = True
+
             if changed:
                 feeder_updated += 1
     except Exception:
