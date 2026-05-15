@@ -43,7 +43,7 @@ from javax.swing import (JOptionPane, JPanel, JLabel, JTextField,
 from java.awt import GridBagLayout, GridBagConstraints, Insets
 
 from org.openpnp.model import Configuration, LengthUnit, Length, Location
-from org.openpnp.util import MovableUtils
+from org.openpnp.util import MovableUtils, OpenCvUtils
 from org.openpnp.util.UiUtils import submitUiMachineTask
 
 try:
@@ -253,24 +253,34 @@ def _allocate(feeders_info, segment_mm):
 
 
 # ---------------------------------------------------------------------------
-# Camera movement
+# Camera movement and auto hole finding
 # ---------------------------------------------------------------------------
 
-def _move_camera_to_holder(camera, config, holder_idx, seg_start):
-    """Move camera to the approximate position of a holder segment.
-    Uses the same pattern as OpenPnP's official move_machine.py example:
-    pass a plain Python function to submitUiMachineTask and call .get()."""
-    seg_mm = config["segment_mm"]
-    x = config["start_x"] + holder_idx * config["spacing_x"]
-    y = config["start_y"] + seg_start  * seg_mm
-    z = config["z"]
-    target = Location(LengthUnit.Millimeters, x, y, z, 90.0)
+# EIA-481 sprocket hole dimensions (all standard tape widths)
+SPROCKET_HOLE_DIA_MIN = Length(1.2, LengthUnit.Millimeters)
+SPROCKET_HOLE_DIA_MAX = Length(1.8, LengthUnit.Millimeters)
+SPROCKET_HOLE_MIN_DIST = Length(3.0, LengthUnit.Millimeters)
+SPROCKET_HOLE_PITCH    = 4.0   # mm — fixed for all EIA-481 tapes
+SPROCKET_PITCH_TOL     = 0.6   # mm — tolerance on expected 4mm pitch
+SCAN_STEP_MM           = 4.0   # step size when scanning along Y
+SCAN_MAX_MM            = 60.0  # maximum scan distance from start
 
+
+def _machine_move(camera, target):
+    """Blocking camera move on the machine task thread."""
     def do_move():
         MovableUtils.moveToLocationAtSafeZ(camera, target)
+    submitUiMachineTask(do_move).get()
 
+
+def _move_camera_to_holder(camera, config, holder_idx, seg_start):
+    """Move camera to the start of a holder segment."""
+    x = config["start_x"] + holder_idx * config["spacing_x"]
+    y = config["start_y"] + seg_start  * config["segment_mm"]
+    z = config["z"]
+    target = Location(LengthUnit.Millimeters, x, y, z, 90.0)
     try:
-        submitUiMachineTask(do_move).get()
+        _machine_move(camera, target)
         return True
     except Exception as e:
         JOptionPane.showMessageDialog(None,
@@ -279,22 +289,50 @@ def _move_camera_to_holder(camera, config, holder_idx, seg_start):
         return False
 
 
-def _capture_hole(camera, prompt):
-    """Show a prompt dialog, then capture the camera's current location.
-    Returns Location or None on cancel."""
-    ok = JOptionPane.showConfirmDialog(None,
-         _msg(prompt),
-         DIALOG_TITLE,
-         JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
-    if ok != JOptionPane.OK_OPTION:
-        return None
+def _find_holes_at_current_pos(camera):
+    """Run HoughCircles at the current camera position.
+    Returns list of Location objects (machine coords) sorted by Y."""
     try:
-        return camera.getLocation()
-    except Exception as e:
-        JOptionPane.showMessageDialog(None,
-            _msg("Could not read camera position:\n{}".format(e)),
-            DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
-        return None
+        circles = list(OpenCvUtils.houghCircles(
+            camera,
+            SPROCKET_HOLE_DIA_MIN,
+            SPROCKET_HOLE_DIA_MAX,
+            SPROCKET_HOLE_MIN_DIST))
+        circles.sort(key=lambda c: c.getY())
+        return circles
+    except Exception:
+        return []
+
+
+def _pick_hole_pair(circles):
+    """From a list of circles, return the first (hole1, hole2) pair
+    whose Y-separation matches the expected 4mm sprocket pitch."""
+    for i in range(len(circles) - 1):
+        dy = abs(circles[i + 1].getY() - circles[i].getY())
+        if abs(dy - SPROCKET_HOLE_PITCH) <= SPROCKET_PITCH_TOL:
+            return circles[i], circles[i + 1]
+    return None, None
+
+
+def _auto_find_holes(camera, start_x, start_y, z):
+    """Scan along +Y from the holder segment start until two sprocket holes
+    with the correct 4mm pitch are found.
+    Returns (hole1_Location, hole2_Location) or (None, None) on failure."""
+    steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
+    for step in range(steps):
+        scan_y = start_y + step * SCAN_STEP_MM
+        target = Location(LengthUnit.Millimeters, start_x, scan_y, z, 90.0)
+        try:
+            _machine_move(camera, target)
+        except Exception:
+            continue
+
+        circles = _find_holes_at_current_pos(camera)
+        hole1, hole2 = _pick_hole_pair(circles)
+        if hole1 is not None:
+            return hole1, hole2
+
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -480,36 +518,39 @@ def run():
 
         # ---- Load ----
 
-        # 1. Move camera to holder segment position
-        moved = _move_camera_to_holder(
-            camera, holder_cfg, fi["holder_idx"], seg_s)
-        if not moved:
-            # Movement failed; offer to continue anyway or abort
-            cont = JOptionPane.showConfirmDialog(None,
-                _msg("Camera move failed. Continue with manual positioning?"),
-                DIALOG_TITLE,
-                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
-            if cont != JOptionPane.YES_OPTION:
-                break
-
-        # 2. Capture reference hole 1
-        hole1 = _capture_hole(
-            camera,
-            "Camera moved to holder H{:02d} {}.\n\n"
-            "Load the tape, then use the jog controls to align\n"
-            "the camera crosshair over SPROCKET HOLE 1.\n\n"
-            "Click OK when centred on hole 1.".format(h_num, seg_label))
-        if hole1 is None:
+        # 1. Ask user to load tape, then confirm ready
+        ok = JOptionPane.showConfirmDialog(None,
+            _msg("Load tape for:\n\n"
+                 "Part:  {}\n"
+                 "Cut:   {:.0f} mm  ({} parts)\n\n"
+                 "Place the tape in H{:02d} {} and click OK.\n"
+                 "The camera will then scan for sprocket holes automatically.".format(
+                     part_id, cut_length, fi["max_count"], h_num, seg_label)),
+            DIALOG_TITLE,
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
+        if ok != JOptionPane.OK_OPTION:
             skipped_load += 1
             continue
 
-        # 3. Capture reference hole 2
-        hole2 = _capture_hole(
-            camera,
-            "Now align the crosshair over the NEXT SPROCKET HOLE\n"
-            "(hole 2, along the tape direction).\n\n"
-            "Click OK when centred on hole 2.".format())
-        if hole2 is None:
+        # 2. Move to segment start
+        x_holder = holder_cfg["start_x"] + fi["holder_idx"] * holder_cfg["spacing_x"]
+        y_seg    = holder_cfg["start_y"] + seg_s * holder_cfg["segment_mm"]
+        z_cfg    = holder_cfg["z"]
+
+        if not _move_camera_to_holder(camera, holder_cfg, fi["holder_idx"], seg_s):
+            skipped_load += 1
+            continue
+
+        # 3. Auto-scan for two sprocket holes
+        hole1, hole2 = _auto_find_holes(camera, x_holder, y_seg, z_cfg)
+
+        if hole1 is None:
+            JOptionPane.showMessageDialog(None,
+                _msg("Could not find two sprocket holes in H{:02d} {}.\n\n"
+                     "Check the tape is loaded and the camera Z height is correct.\n"
+                     "Feeder {} was NOT configured.".format(
+                         h_num, seg_label, part_id)),
+                DIALOG_TITLE, JOptionPane.WARNING_MESSAGE)
             skipped_load += 1
             continue
 
