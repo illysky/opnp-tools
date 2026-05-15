@@ -257,6 +257,21 @@ def run():
         new_part_ids.add(part_id)
         new_pkg_ids.add(pkg_id)
 
+    # --- Optionally clear existing non-fiducial parts + packages from memory -
+    if do_clear:
+        for p in list(cfg.getParts()):
+            if not FIDUCIAL_PATTERN.search(p.getId()):
+                try:
+                    cfg.removePart(p)
+                except Exception:
+                    pass
+        for pk in list(cfg.getPackages()):
+            if not FIDUCIAL_PATTERN.search(pk.getId()):
+                try:
+                    cfg.removePackage(pk)
+                except Exception:
+                    pass
+
     # --- Create packages via API ------------------------------------------
     existing_pkg_ids = set(pkg.getId() for pkg in cfg.getPackages())
     n_pkgs_created   = 0
