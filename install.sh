@@ -5,23 +5,21 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS_SRC="$REPO_DIR/scripts"
 TOOLS_DIR="$REPO_DIR/tools"
-OPENPNP_DIR="${OPENPNP_SCRIPTS_DIR:-$HOME/.openpnp2/scripts/illysky}"
+OPENPNP_SCRIPTS_BASE="${HOME}/.openpnp2/scripts"
+OPENPNP_LINK="${OPENPNP_SCRIPTS_BASE}/illysky"
 BIN_DIR="$HOME/.local/bin"
 
 echo "Repo:          $REPO_DIR"
-echo "OpenPnP menu:  $OPENPNP_DIR"
+echo "OpenPnP menu:  $OPENPNP_LINK -> $SCRIPTS_SRC"
 echo "Local bin:     $BIN_DIR"
 echo ""
 
-# --- OpenPnP Jython scripts -------------------------------------------
-mkdir -p "$OPENPNP_DIR"
-for src in "$SCRIPTS_SRC"/*.py; do
-    fname="$(basename "$src")"
-    dest="$OPENPNP_DIR/$fname"
-    [ -L "$dest" ] && rm "$dest"
-    ln -s "$src" "$dest"
-    echo "  linked (OpenPnP): $fname"
-done
+# --- OpenPnP scripts folder -------------------------------------------
+mkdir -p "$OPENPNP_SCRIPTS_BASE"
+[ -L "$OPENPNP_LINK" ] && rm "$OPENPNP_LINK"
+[ -d "$OPENPNP_LINK" ] && rm -rf "$OPENPNP_LINK"
+ln -s "$SCRIPTS_SRC" "$OPENPNP_LINK"
+echo "  linked (OpenPnP): illysky/ -> $SCRIPTS_SRC"
 
 # --- pnp_creator tool -------------------------------------------------
 mkdir -p "$BIN_DIR"
@@ -40,4 +38,4 @@ fi
 echo ""
 echo "Done."
 echo "  Run 'source ~/.bashrc' (or open a new terminal) to use pnp_creator."
-echo "  Restart OpenPnP (or Scripts -> Reload) to pick up script changes."
+echo "  Restart OpenPnP (or Scripts -> Reload) to pick up changes."
