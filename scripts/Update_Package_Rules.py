@@ -20,7 +20,21 @@ from javax.swing import JOptionPane
 
 from org.openpnp.model import Configuration, LengthUnit
 
-RULES_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "package_rules.json")
+def _resolve_rules_file():
+    """Resolve package_rules.json next to the real script file, following symlinks via Java NIO."""
+    try:
+        from java.nio.file import Paths, Files
+        p = Paths.get(__file__)
+        if Files.isSymbolicLink(p):
+            target = Files.readSymbolicLink(p)
+            if not target.isAbsolute():
+                target = p.getParent().resolve(target)
+            p = target
+        return str(p.getParent().resolve("package_rules.json"))
+    except Exception:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "package_rules.json")
+
+RULES_FILE = _resolve_rules_file()
 
 FIDUCIAL_PATTERN = re.compile(r"fiducial|fidhole|fid\b", re.IGNORECASE)
 
