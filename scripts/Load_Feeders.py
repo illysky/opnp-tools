@@ -45,6 +45,7 @@ from java.awt import GridBagLayout, GridBagConstraints, Insets
 from org.openpnp.model import Configuration, LengthUnit, Length, Location
 from org.openpnp.util import MovableUtils, OpenCvUtils
 from org.openpnp.util.UiUtils import submitUiMachineTask
+from org.openpnp.gui import MainFrame
 
 try:
     from org.openpnp.machine.reference.feeder import ReferenceStripFeeder
@@ -289,9 +290,25 @@ def _move_camera_to_holder(camera, config, holder_idx, seg_start):
         return False
 
 
+def _capture_and_show(camera):
+    """Capture a frame, push it to the UI camera view, and return the image."""
+    try:
+        img = camera.lightSettleAndCapture()
+        try:
+            view = MainFrame.get().getCameraViews().getCameraView(camera)
+            if view is not None:
+                view.frameReceived(img)
+        except Exception:
+            pass
+        return img
+    except Exception:
+        return None
+
+
 def _find_holes_at_current_pos(camera):
-    """Run HoughCircles at the current camera position.
+    """Capture frame, update UI, then run HoughCircles.
     Returns list of Location objects (machine coords) sorted by Y."""
+    _capture_and_show(camera)
     try:
         circles = list(OpenCvUtils.houghCircles(
             camera,
