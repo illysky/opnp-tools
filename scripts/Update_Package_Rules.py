@@ -18,7 +18,7 @@ from datetime import datetime
 
 from javax.swing import JOptionPane
 
-from org.openpnp.model import Configuration, LengthUnit
+from org.openpnp.model import Configuration
 
 RULES_FILE = os.path.expanduser("~/.openpnp2/scripts/illysky/package_rules.json")
 
@@ -110,14 +110,8 @@ def run():
         # Read current state from OpenPnP
         nozzle_name = _get_nozzle_name(pkg, id_to_name)
 
-        height_mm = 0.0
-        try:
-            h = pkg.getHeight()
-            if h is not None:
-                height_mm = round(h.convertToUnits(LengthUnit.Millimeters).getValue(), 3)
-        except Exception:
-            pass
-
+        # Note: height is stored on Part not Package in OpenPnP — we don't
+        # read or update it here. It stays as set in package_rules.json.
         bw, bh = 0.0, 0.0
         try:
             fp = pkg.getFootprint()
@@ -136,13 +130,11 @@ def run():
 
         if matched_rule is not None:
             # Update the existing rule with any configured values
-            if not nozzle_name and height_mm == 0.0 and bw == 0.0 and bh == 0.0:
+            if not nozzle_name and bw == 0.0 and bh == 0.0:
                 continue
             changed = False
             if nozzle_name and matched_rule.get("nozzle") != nozzle_name:
                 matched_rule["nozzle"]         = nozzle_name;  changed = True
-            if height_mm > 0.0 and matched_rule.get("height_mm", 0.0) != height_mm:
-                matched_rule["height_mm"]      = round(height_mm, 3); changed = True
             if bw > 0.0 and matched_rule.get("body_width_mm", 0.0) != bw:
                 matched_rule["body_width_mm"]  = round(bw, 3); changed = True
             if bh > 0.0 and matched_rule.get("body_height_mm", 0.0) != bh:
@@ -154,13 +146,14 @@ def run():
             # Only add a new rule if the package is fully configured —
             # nozzle assigned AND body dimensions set. That way we know
             # the user has deliberately set it up in OpenPnP.
-            if not nozzle_name or bw == 0.0 or bh == 0.0 or height_mm == 0.0:
+            # Require nozzle + both body dims to be set before adding
+            if not nozzle_name or bw == 0.0 or bh == 0.0:
                 continue
 
             new_rule = {
                 "pattern":        re.escape(pkg_id),
                 "nozzle":         nozzle_name,
-                "height_mm":      round(height_mm, 3) if height_mm > 0.0 else 1.0,
+                "height_mm":      1.0,   # height is on Part — set manually in JSON if needed
                 "body_width_mm":  round(bw, 3),
                 "body_height_mm": round(bh, 3),
             }
