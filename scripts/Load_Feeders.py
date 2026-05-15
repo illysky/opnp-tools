@@ -556,7 +556,7 @@ def run_auto(cfg, camera, feeders_info, holder_cfg):
         # Scan the full holder length (all segments)
         scan_mm = HOLDER_MM
 
-        _set_status("Scanning holder {} (x={:.1f}) for {} feeder(s)...".format(
+        _set_status("Scanning slot {} (x={:.1f}) for {} feeder(s)...".format(
             holder_idx + 1, x, len(feeders)))
 
         try:
@@ -568,7 +568,7 @@ def run_auto(cfg, camera, feeders_info, holder_cfg):
             continue
 
         zones = _zones_from_detections(detections)
-        _set_status("Holder {}: {} zone(s) found, {} feeder(s) expected".format(
+        _set_status("Slot {}: {} zone(s) found, {} feeder(s) expected".format(
             holder_idx + 1, len(zones), len(feeders)))
 
         # Match zones to feeders in order
@@ -787,8 +787,7 @@ def run():
         is_first = (h_idx == 0)
         is_last  = (h_idx == total_holders - 1)
 
-        lines = ["H{:02d}  {}  --  load {} tape(s)\n".format(
-            h_num, h_key, len(flist))]
+        lines = ["Load Slot {} with:\n".format(h_num)]
         for fi in flist:
             lines.append("  {}   {} pcs   {:.0f}mm".format(
                 fi["part_id"], fi["max_count"], fi["cut_length"]))
@@ -828,19 +827,19 @@ def run():
         start_y  = holder_cfg["start_y"]
         z_cfg    = holder_cfg["z"]
 
-        _set_status("Scanning H{:02d} (x={:.2f})...".format(h_num, x_holder))
+        _set_status("Scanning slot {} (x={:.2f})...".format(h_num, x_holder))
 
         try:
             detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg)
         except Exception as e:
             JOptionPane.showMessageDialog(None,
-                _msg("Scan failed for H{:02d}:\n{}".format(h_num, e)),
+                _msg("Scan failed for slot {}:\n{}".format(h_num, e)),
                 DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
             skipped_load += len(flist)
             continue
 
         zones = _zones_from_detections(detections)
-        _set_status("H{:02d}: {} zone(s) found, {} feeder(s)".format(
+        _set_status("Slot {}: {} zone(s) found, {} feeder(s)".format(
             h_num, len(zones), len(flist)))
 
         for i, fi in enumerate(flist):
