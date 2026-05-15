@@ -276,9 +276,11 @@ def run():
         is_passive  = part_id[0].upper() in ('C', 'L', 'R')
         multiplier  = (1.0 + attrition) if is_passive else 1.0
         total_qty   = int(math.ceil(board_count * build_size * multiplier))
-        tape_mm     = total_qty * pitch
-        num_feeders = max(1, int(math.ceil(tape_mm / MAX_TAPE_MM)))
-        per_feeder  = int(math.ceil(float(total_qty) / num_feeders))
+
+        # Physical tape capacity for this feeder slot
+        capacity    = int(MAX_TAPE_MM / pitch)          # floor: 160/4 = 40
+        num_feeders = max(1, int(math.ceil(float(total_qty) / capacity)))
+        per_feeder  = capacity                          # always fill to tape capacity
 
         feeder_plan.append({
             "part_id":        part_id,
