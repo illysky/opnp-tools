@@ -317,33 +317,45 @@ def _find_holes_at_current_pos(camera, pipeline=None):
 
     if pipeline is not None:
         try:
+            # Set feeder hole size properties that DetectCircularSymmetry reads
+            # via property-name="sprocketHole" in the default pipeline XML
             pipeline.setProperty("camera", camera)
             pipeline.process()
 
-            # Push the captured working image to the UI
+            # Push working image to UI
             try:
                 mat = pipeline.getWorkingImage()
                 if mat is not None:
-                    img = OpenCvUtils.toBufferedImage(mat)
-                    _push_frame_to_ui(camera, img)
+                    _push_frame_to_ui(camera, OpenCvUtils.toBufferedImage(mat))
             except Exception:
                 pass
 
             result = pipeline.getResult("results")
-            if result is not None and result.model is not None:
-                circles_px = list(result.model)
-                locs = []
-                for c in circles_px:
-                    # DetectCircularSymmetry returns coords relative to image center
-                    loc = VisionUtils.getPixelLocation(camera, c.x, c.y)
-                    locs.append(loc)
-                locs.sort(key=lambda l: l.getY())
-                _set_status("  Pipeline: {} circle(s)".format(len(locs)))
-                for l in locs:
-                    _set_status("    X={:.2f} Y={:.2f}".format(l.getX(), l.getY()))
-                return locs
+            _set_status("  Pipeline result: {}".format(result))
+            if result is None:
+                _set_status("  Pipeline: result stage 'results' not found")
+            elif result.model is None:
+                _set_status("  Pipeline: result.model is None")
             else:
-                _set_status("  Pipeline: no result model")
+                _set_status("  Pipeline: model type={}".format(
+                    result.model.getClass().getSimpleName()))
+                try:
+                    size = result.model.size()
+                    _set_status("  Pipeline: model size={}".format(size))
+                except Exception:
+                    pass
+                locs = []
+                try:
+                    for c in result.model:
+                        _set_status("  Pipeline circle: x={} y={} dia={}".format(
+                            c.x, c.y, c.diameter))
+                        loc = VisionUtils.getPixelLocation(camera, c.x, c.y)
+                        locs.append(loc)
+                except Exception as e2:
+                    _set_status("  Pipeline iteration error: {}".format(e2))
+                locs.sort(key=lambda l: l.getY())
+                if locs:
+                    return locs
         except Exception as e:
             _set_status("  Pipeline error, falling back: {}".format(e))
 
