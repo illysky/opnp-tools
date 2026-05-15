@@ -151,15 +151,18 @@ def run():
                 n_updated += 1
 
         else:
-            # No specific rule — add a new one using the exact package ID as pattern.
-            # Use current OpenPnP values, falling back to catch-all defaults.
-            default_nozzle = catchall_rule.get("nozzle", "N24") if catchall_rule else "N24"
+            # Only add a new rule if the package is fully configured —
+            # nozzle assigned AND body dimensions set. That way we know
+            # the user has deliberately set it up in OpenPnP.
+            if not nozzle_name or bw == 0.0 or bh == 0.0:
+                continue
+
             new_rule = {
                 "pattern":        re.escape(pkg_id),
-                "nozzle":         nozzle_name if nozzle_name else default_nozzle,
+                "nozzle":         nozzle_name,
                 "height_mm":      round(height_mm, 3) if height_mm > 0.0 else 1.0,
-                "body_width_mm":  round(bw, 3) if bw > 0.0 else 0.0,
-                "body_height_mm": round(bh, 3) if bh > 0.0 else 0.0,
+                "body_width_mm":  round(bw, 3),
+                "body_height_mm": round(bh, 3),
             }
             # Insert before the catch-all so it is evaluated first
             if catchall_rule and catchall_rule in rules:
