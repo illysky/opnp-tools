@@ -185,7 +185,7 @@ def run():
     combo_board  = JComboBox([b.getName() for b in open_boards])
     tf_build     = JTextField("1",   6)
     tf_attrition = JTextField("10",  6)
-    tf_z         = JTextField("0.0", 6)
+    tf_z         = JTextField("4.2", 6)
 
     panel = JPanel(GridBagLayout())
     panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8))
