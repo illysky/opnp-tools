@@ -39,8 +39,9 @@ from __future__ import absolute_import
 import os, re, json, math
 
 from javax.swing import (JOptionPane, JPanel, JLabel, JTextField,
-                         BorderFactory)
+                         BorderFactory, SwingUtilities)
 from java.awt import GridBagLayout, GridBagConstraints, Insets
+from java.lang import Thread as JThread, Runnable
 
 from org.openpnp.model import Configuration, LengthUnit, Length, Location
 from org.openpnp.util import MovableUtils, OpenCvUtils
@@ -267,21 +268,24 @@ SCAN_STEP_MM           = 4.0   # step size when scanning along Y
 SCAN_MAX_MM            = 60.0  # maximum scan distance from start
 
 
-def _machine_move(camera, target):
-    """Blocking camera move on the machine task thread."""
-    def do_move():
-        MovableUtils.moveToLocationAtSafeZ(camera, target)
-    submitUiMachineTask(do_move).get()
+def _move_direct(camera, target):
+    """Move camera directly — call only from inside a machine task thread."""
+    MovableUtils.moveToLocationAtSafeZ(camera, target)
 
 
-def _move_camera_to_holder(camera, config, holder_idx, seg_start):
-    """Move camera to the start of a holder segment."""
+def _move_camera_to_holder_task(camera, config, holder_idx, seg_start):
+    """Submit a single machine task to move to a holder segment.
+    Blocks until complete.  Returns True/False."""
     x = config["start_x"] + holder_idx * config["spacing_x"]
     y = config["start_y"] + seg_start  * config["segment_mm"]
     z = config["z"]
     target = Location(LengthUnit.Millimeters, x, y, z, 90.0)
+
+    def do_move():
+        _move_direct(camera, target)
+
     try:
-        _machine_move(camera, target)
+        submitUiMachineTask(do_move).get()
         return True
     except Exception as e:
         JOptionPane.showMessageDialog(None,
@@ -290,25 +294,30 @@ def _move_camera_to_holder(camera, config, holder_idx, seg_start):
         return False
 
 
-def _capture_and_show(camera):
-    """Capture a frame, push it to the UI camera view, and return the image."""
-    try:
-        img = camera.lightSettleAndCapture()
-        try:
-            view = MainFrame.get().getCameraViews().getCameraView(camera)
-            if view is not None:
-                view.frameReceived(img)
-        except Exception:
-            pass
-        return img
-    except Exception:
-        return None
+def _push_frame_to_ui(camera, img):
+    """Schedule a camera frame update on the EDT (fire-and-forget)."""
+    captured_img = img
+    captured_cam = camera
+    class Push(Runnable):
+        def run(self):
+            try:
+                view = MainFrame.get().getCameraViews().getCameraView(captured_cam)
+                if view is not None:
+                    view.frameReceived(captured_img)
+            except Exception:
+                pass
+    SwingUtilities.invokeLater(Push())
 
 
 def _find_holes_at_current_pos(camera):
-    """Capture frame, update UI, then run HoughCircles.
-    Returns list of Location objects (machine coords) sorted by Y."""
-    _capture_and_show(camera)
+    """Capture frame, push to UI, run HoughCircles.
+    Must be called from the machine task thread (direct camera access)."""
+    try:
+        img = camera.lightSettleAndCapture()
+        if img is not None:
+            _push_frame_to_ui(camera, img)
+    except Exception:
+        pass
     try:
         circles = list(OpenCvUtils.houghCircles(
             camera,
@@ -332,24 +341,32 @@ def _pick_hole_pair(circles):
 
 
 def _auto_find_holes(camera, start_x, start_y, z):
-    """Scan along +Y from the holder segment start until two sprocket holes
-    with the correct 4mm pitch are found.
-    Returns (hole1_Location, hole2_Location) or (None, None) on failure."""
-    steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
-    for step in range(steps):
-        scan_y = start_y + step * SCAN_STEP_MM
-        target = Location(LengthUnit.Millimeters, start_x, scan_y, z, 90.0)
-        try:
-            _machine_move(camera, target)
-        except Exception:
-            continue
+    """Scan along +Y inside a SINGLE machine task so the EDT stays free
+    to process UI repaints.  Returns (hole1, hole2) or (None, None)."""
+    result = [None, None]
 
-        circles = _find_holes_at_current_pos(camera)
-        hole1, hole2 = _pick_hole_pair(circles)
-        if hole1 is not None:
-            return hole1, hole2
+    def scan():
+        steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
+        for step in range(steps):
+            scan_y = start_y + step * SCAN_STEP_MM
+            target = Location(LengthUnit.Millimeters, start_x, scan_y, z, 90.0)
+            try:
+                _move_direct(camera, target)
+            except Exception:
+                continue
+            circles = _find_holes_at_current_pos(camera)
+            h1, h2 = _pick_hole_pair(circles)
+            if h1 is not None:
+                result[0] = h1
+                result[1] = h2
+                return
 
-    return None, None
+    try:
+        submitUiMachineTask(scan).get()
+    except Exception:
+        pass
+
+    return result[0], result[1]
 
 
 # ---------------------------------------------------------------------------
@@ -554,7 +571,7 @@ def run():
         y_seg    = holder_cfg["start_y"] + seg_s * holder_cfg["segment_mm"]
         z_cfg    = holder_cfg["z"]
 
-        if not _move_camera_to_holder(camera, holder_cfg, fi["holder_idx"], seg_s):
+        if not _move_camera_to_holder_task(camera, holder_cfg, fi["holder_idx"], seg_s):
             skipped_load += 1
             continue
 
@@ -594,4 +611,15 @@ def run():
         DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
 
 
-run()
+# If called on the Swing EDT (which OpenPnP scripts typically are),
+# relaunch in a background thread so the EDT stays free to repaint
+# the camera view while machine operations are running.
+if SwingUtilities.isEventDispatchThread():
+    class _Runner(Runnable):
+        def run(self):
+            run()
+    t = JThread(_Runner())
+    t.setDaemon(True)
+    t.start()
+else:
+    run()
