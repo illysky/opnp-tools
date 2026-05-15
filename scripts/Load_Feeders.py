@@ -332,33 +332,36 @@ def _find_holes_at_current_pos(camera):
 
 SPROCKET_X_TOL = 0.5   # mm — two sprocket holes must share the same X (same edge)
 
-def _pick_hole_pair(circles):
-    """Return the first pair of circles that match sprocket hole geometry:
-      - Y separation ≈ 4mm (tape sprocket pitch)
-      - X positions within tolerance (both on the same tape edge)
-    Checks all combinations, not just adjacent, to handle extra detections."""
-    for i in range(len(circles)):
-        for j in range(len(circles)):
-            if i == j:
-                continue
-            c1, c2 = circles[i], circles[j]
-            dy = c2.getY() - c1.getY()          # positive = c2 is further along tape
-            dx = abs(c2.getX() - c1.getX())
-            if dy > 0 and abs(dy - SPROCKET_HOLE_PITCH) <= SPROCKET_PITCH_TOL \
-                      and dx <= SPROCKET_X_TOL:
-                return c1, c2
-    return None, None
-
 
 def _set_status(msg):
     """Print scan status to the OpenPnP log/console (visible in the UI footer)."""
     print("[Load Feeders] " + msg)
 
 
+def _all_hole_pairs(circles):
+    """Return ALL valid (hole1, hole2) pairs from circles, sorted by hole1.Y ascending.
+    Scanning the full range and taking the lowest-Y pair ensures we get the
+    beginning of the tape (pick end) even if detection is easier near the tail."""
+    pairs = []
+    for i in range(len(circles)):
+        for j in range(len(circles)):
+            if i == j:
+                continue
+            c1, c2 = circles[i], circles[j]
+            dy = c2.getY() - c1.getY()
+            dx = abs(c2.getX() - c1.getX())
+            if dy > 0 and abs(dy - SPROCKET_HOLE_PITCH) <= SPROCKET_PITCH_TOL \
+                      and dx <= SPROCKET_X_TOL:
+                pairs.append((c1, c2))
+    pairs.sort(key=lambda p: p[0].getY())
+    return pairs
+
+
 def _auto_find_holes(camera, start_x, start_y, z):
-    """Scan along +Y inside a SINGLE machine task so the EDT stays free
-    to process UI repaints.  Returns (hole1, hole2) or (None, None)."""
-    result    = [None, None]
+    """Scan the FULL segment range in +Y, collect every valid hole pair, then
+    return the pair closest to start_y (the pick/beginning end of the tape).
+    Runs inside a single machine task so the EDT stays free to repaint."""
+    all_pairs   = []
     total_steps = int(math.ceil(SCAN_MAX_MM / SCAN_STEP_MM)) + 1
 
     def scan():
@@ -372,23 +375,29 @@ def _auto_find_holes(camera, start_x, start_y, z):
             except Exception:
                 continue
             circles = _find_holes_at_current_pos(camera)
-            n = len(circles)
-            _set_status("  {} circle(s) found".format(n))
-            h1, h2 = _pick_hole_pair(circles)
-            if h1 is not None:
-                _set_status("  Hole pair found at Y={:.2f} and Y={:.2f}".format(
-                    h1.getY(), h2.getY()))
-                result[0] = h1
-                result[1] = h2
-                return
-        _set_status("Scan complete — no hole pair found in {:.0f}mm".format(SCAN_MAX_MM))
+            _set_status("  {} circle(s) found".format(len(circles)))
+            for pair in _all_hole_pairs(circles):
+                # Avoid duplicate pairs (same Y within 1mm)
+                if not any(abs(p[0].getY() - pair[0].getY()) < 1.0 for p in all_pairs):
+                    all_pairs.append(pair)
+                    _set_status("  Candidate pair Y={:.2f} / Y={:.2f}".format(
+                        pair[0].getY(), pair[1].getY()))
+
+        if all_pairs:
+            best = all_pairs[0]   # already sorted by Y — lowest = beginning of tape
+            _set_status("Best pair (closest to pick end): Y={:.2f} / Y={:.2f}".format(
+                best[0].getY(), best[1].getY()))
+        else:
+            _set_status("Scan complete — no hole pair found in {:.0f}mm".format(SCAN_MAX_MM))
 
     try:
         submitUiMachineTask(scan).get()
     except Exception as e:
         _set_status("Scan task error: {}".format(e))
 
-    return result[0], result[1]
+    if all_pairs:
+        return all_pairs[0]
+    return None, None
 
 
 # ---------------------------------------------------------------------------
