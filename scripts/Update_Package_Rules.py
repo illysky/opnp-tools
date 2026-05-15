@@ -20,7 +20,7 @@ from javax.swing import JOptionPane
 
 from org.openpnp.model import Configuration, LengthUnit
 
-RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "package_rules.json")
+RULES_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "package_rules.json")
 
 FIDUCIAL_PATTERN = re.compile(r"fiducial|fidhole|fid\b", re.IGNORECASE)
 

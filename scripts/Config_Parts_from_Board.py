@@ -30,7 +30,7 @@ from org.openpnp import model as _openpnp_model
 # Rules file — loaded at runtime, edit with Update_Package_Rules script
 # ---------------------------------------------------------------------------
 
-RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "package_rules.json")
+RULES_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "package_rules.json")
 
 def _load_rules():
     """Load rules from package_rules.json. Falls back to a minimal catch-all."""

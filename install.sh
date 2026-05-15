@@ -12,7 +12,7 @@ echo ""
 
 mkdir -p "$OPENPNP_DIR"
 
-for src in "$SCRIPTS_SRC"/*; do
+for src in "$SCRIPTS_SRC"/*.py; do
     fname="$(basename "$src")"
     dest="$OPENPNP_DIR/$fname"
     if [ -L "$dest" ]; then
