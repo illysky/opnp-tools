@@ -43,7 +43,8 @@ from javax.swing import (JOptionPane, JPanel, JLabel, JTextField,
 from java.awt import GridBagLayout, GridBagConstraints, Insets
 
 from org.openpnp.model import Configuration, LengthUnit, Length, Location
-from org.openpnp.util import MovableUtils
+from org.openpnp.util import MovableUtils, UiUtils
+from java.util.concurrent import Callable
 
 try:
     from org.openpnp.machine.reference.feeder import ReferenceStripFeeder
@@ -256,14 +257,22 @@ def _allocate(feeders_info, segment_mm):
 # ---------------------------------------------------------------------------
 
 def _move_camera_to_holder(camera, config, holder_idx, seg_start):
-    """Move camera to the approximate position of a holder segment."""
+    """Move camera to the approximate position of a holder segment.
+    Machine operations must run on the machine task thread via UiUtils."""
     seg_mm = config["segment_mm"]
     x = config["start_x"] + holder_idx * config["spacing_x"]
     y = config["start_y"] + seg_start  * seg_mm
     z = config["z"]
     target = Location(LengthUnit.Millimeters, x, y, z, 90.0)
+
+    class MoveTask(Callable):
+        def call(self):
+            MovableUtils.moveToLocationAtSafeZ(camera, target)
+            return None
+
     try:
-        MovableUtils.moveToLocationAtSafeZ(camera, target)
+        future = UiUtils.submitUiMachineTask(MoveTask())
+        future.get()   # block until move completes
         return True
     except Exception as e:
         JOptionPane.showMessageDialog(None,
