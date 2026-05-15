@@ -767,7 +767,7 @@ def run():
         return
 
     # ------------------------------------------------------------------
-    # Interactive load loop — holder by holder
+    # Interactive load loop — page through holders, THEN scan
     # ------------------------------------------------------------------
     from collections import OrderedDict
 
@@ -775,61 +775,60 @@ def run():
     for fi in feeders_info:
         by_holder.setdefault(fi["holder_idx"], []).append(fi)
 
-    holder_list = list(by_holder.items())   # [(holder_idx, [fi, ...]), ...]
+    holder_list   = list(by_holder.items())
     total_holders = len(holder_list)
-    loaded       = 0
-    skipped_load = 0
-    h_idx        = 0   # current position in holder_list
+    h_idx         = 0
 
+    # Step 1: navigate through all holders (no scanning yet)
     while 0 <= h_idx < total_holders:
         holder_idx, flist = holder_list[h_idx]
-        h_num  = holder_idx + 1
-        h_key  = flist[0]["holder_key"]
+        h_num    = holder_idx + 1
+        h_key    = flist[0]["holder_key"]
         is_first = (h_idx == 0)
         is_last  = (h_idx == total_holders - 1)
 
-        # Build component list for this holder
-        part_lines = []
+        lines = ["H{:02d}  {}  --  load {} tape(s)\n".format(
+            h_num, h_key, len(flist))]
         for fi in flist:
-            seg_label = "seg {}-{}".format(fi["seg_start"] + 1,
-                                           fi["seg_start"] + fi["segs_used"])
-            part_lines.append(
-                "&nbsp;&nbsp;• &nbsp;<b>{}</b>"
-                " &nbsp; {} pcs &nbsp; {:.0f}mm cut"
-                " &nbsp; [{}] &nbsp; <i>{}</i>".format(
-                    fi["part_id"], fi["max_count"],
-                    fi["cut_length"], fi["spec_str"], seg_label))
-
-        body = ("<b>H{:02d} &nbsp; {}</b><br><br>"
-                "Load these tape(s), then click Scan:<br><br>"
-                "{}".format(h_num, h_key, "<br>".join(part_lines)))
+            lines.append("  {}   {} pcs   {:.0f}mm".format(
+                fi["part_id"], fi["max_count"], fi["cut_length"]))
 
         if is_last:
-            btns = (["← Back", "Scan", "Exit"] if not is_first
-                    else ["Scan", "Exit"])
+            btns = ["Start Scan"] if is_first else ["Back", "Start Scan", "Exit"]
         else:
-            btns = (["← Back", "Scan & Next →", "Exit"] if not is_first
-                    else ["Scan & Next →", "Exit"])
+            btns = ["Next"] if is_first else ["Back", "Next", "Exit"]
 
         choice = JOptionPane.showOptionDialog(
-            None, _msg(body),
+            None, _msg("\n".join(lines)),
             "{} — {}/{}".format(DIALOG_TITLE, h_idx + 1, total_holders),
             JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
             None, btns, btns[0])
 
-        if choice == JOptionPane.CLOSED_OPTION or btns[choice] == "Exit":
-            break
-
-        if btns[choice] == "← Back":
+        if choice == JOptionPane.CLOSED_OPTION:
+            return
+        label = btns[choice]
+        if label == "Exit":
+            return
+        elif label == "Back":
             h_idx -= 1
-            continue
+        elif label == "Next":
+            h_idx += 1
+        elif label == "Start Scan":
+            break   # done navigating — proceed to scan
+    else:
+        return   # exited loop without hitting Start Scan
 
-        # ---- Scan this holder ----
+    # Step 2: scan all holders in order
+    loaded       = 0
+    skipped_load = 0
+
+    for holder_idx, flist in holder_list:
+        h_num    = holder_idx + 1
         x_holder = holder_cfg["start_x"] + holder_idx * holder_cfg["spacing_x"]
         start_y  = holder_cfg["start_y"]
         z_cfg    = holder_cfg["z"]
 
-        _set_status("Interactive scan: holder {} (x={:.2f})".format(h_num, x_holder))
+        _set_status("Scanning H{:02d} (x={:.2f})...".format(h_num, x_holder))
 
         try:
             detections = _scan_holder(camera, x_holder, start_y, HOLDER_MM, z_cfg)
@@ -837,7 +836,7 @@ def run():
             JOptionPane.showMessageDialog(None,
                 _msg("Scan failed for H{:02d}:\n{}".format(h_num, e)),
                 DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
-            h_idx += 1
+            skipped_load += len(flist)
             continue
 
         zones = _zones_from_detections(detections)
@@ -850,22 +849,18 @@ def run():
                 skipped_load += 1
                 continue
             _, hole1, hole2 = zones[i]
-            feeder = fi["feeder"]
             try:
-                feeder.setReferenceHoleLocation(hole1)
-                feeder.setLastHoleLocation(hole2)
-                feeder.setFeedCount(0)
-                feeder.setEnabled(True)
+                fi["feeder"].setReferenceHoleLocation(hole1)
+                fi["feeder"].setLastHoleLocation(hole2)
+                fi["feeder"].setFeedCount(0)
+                fi["feeder"].setEnabled(True)
                 loaded += 1
                 _set_status("  Configured {}".format(fi["part_id"]))
             except Exception as e:
-                JOptionPane.showMessageDialog(None,
-                    _msg("Failed to configure {}:\n{}".format(fi["part_id"], e)),
-                    DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
+                _set_status("  Error {}: {}".format(fi["part_id"], e))
                 skipped_load += 1
 
         cfg.save()
-        h_idx += 1
 
     # ------------------------------------------------------------------
     # Done
