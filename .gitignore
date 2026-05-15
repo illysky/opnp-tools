@@ -1,0 +1,11 @@
+# Auto-downloaded LCSC parts database (~4MB)
+tools/lcsc_parts.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+*.bak.*

@@ -1,0 +1,214 @@
+{
+  "rules": [
+    {
+      "comment": "QFP / QFN very large - skip (MUST be before generic QFN rules)",
+      "match": "QFP|LQFP",
+      "tape_mm": 0,
+      "pitch_mm": 0,
+      "skip": true
+    },
+    {
+      "comment": "nRF5340 / QFN-98 (16mm tape)",
+      "match": "QFN-98|nRF5340",
+      "tape_mm": 16,
+      "pitch_mm": 12,
+      "thickness": "thin"
+    },
+    {
+      "comment": "Through-hole connectors",
+      "match": "PinHeader|Molex|PicoBlade",
+      "tape_mm": 0,
+      "pitch_mm": 0,
+      "skip": true
+    },
+    {
+      "comment": "WLCSP small ICs (8mm tape)",
+      "match": "WLCSP",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thin"
+    },
+    {
+      "comment": "DA7212 audio codec (12mm tape)",
+      "match": "DA7212",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "HC-1.2 SMD connector (12mm tape)",
+      "match": "HC-1\\.2",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "USB Type-C SMD connector (12mm tape)",
+      "match": "TYPE-C",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "Fiducials / test points",
+      "match": "FIDHOLE|FIDUCIAL|Fiducial|^TP1$|^TP-",
+      "tape_mm": 0,
+      "pitch_mm": 0,
+      "skip": true
+    },
+    {
+      "comment": "Through-hole electrolytic",
+      "match": "C_Elec|Inductor.*6\\.3",
+      "tape_mm": 0,
+      "pitch_mm": 0,
+      "skip": true
+    },
+    {
+      "comment": "0201 passives",
+      "match": "0201",
+      "tape_mm": 8,
+      "pitch_mm": 2,
+      "thickness": "thin"
+    },
+    {
+      "comment": "0402 passives",
+      "match": "0402",
+      "tape_mm": 8,
+      "pitch_mm": 2,
+      "thickness": "med"
+    },
+    {
+      "comment": "0603 passives / LEDs",
+      "match": "0603",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thick"
+    },
+    {
+      "comment": "0805 passives",
+      "match": "0805",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thick"
+    },
+    {
+      "comment": "1206 passives",
+      "match": "1206",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thick"
+    },
+    {
+      "comment": "SOT-23 variants",
+      "match": "SOT-[12345]\\d\\d?[A-Z]?$|SOT-23",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SOD-123 / SOD-323",
+      "match": "SOD-[0-9]",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thin"
+    },
+    {
+      "comment": "Small DFN/SON (<=2x2mm)",
+      "match": "DFN1010|DFN2020|SON.*2x2",
+      "tape_mm": 8,
+      "pitch_mm": 4,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SMD 2-pin connectors (20854 series etc)",
+      "match": "20854",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SOIC-8",
+      "match": "SOIC-8",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SOT-223",
+      "match": "SOT-223",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "WSON/DFN larger",
+      "match": "WSON.*[3-9]x|DFN.*[3-9]x",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "Crystal SMD 3225/2520",
+      "match": "Crystal|XTAL_[0-9]",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "QFN/VQFN small (<=32 pin)",
+      "match": "QFN.*[123][0-9]P|VQFN.*[123][0-9]P",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "RGB LEDs larger package",
+      "match": "LTST|MHS110|R6GHB",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "PCF85063 RTC TSSOP-8",
+      "match": "PCF85063",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "QFN-32/28 / VQFN medium",
+      "match": "QFN-3[0-9]|QFN-2[0-9]|VQFN-1[0-9]",
+      "tape_mm": 12,
+      "pitch_mm": 8,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SOIC-16 and above (16mm tape)",
+      "match": "SOIC-1[6-9]|SOIC-[2-9]\\d",
+      "tape_mm": 16,
+      "pitch_mm": 12,
+      "thickness": "thin"
+    },
+    {
+      "comment": "TSSOP-16 and above (16mm tape)",
+      "match": "TSSOP-1[6-9]|TSSOP-[2-9]\\d",
+      "tape_mm": 16,
+      "pitch_mm": 12,
+      "thickness": "thin"
+    },
+    {
+      "comment": "QFN-48 and above (16mm tape)",
+      "match": "QFN-[4-9]\\d",
+      "tape_mm": 16,
+      "pitch_mm": 12,
+      "thickness": "thin"
+    },
+    {
+      "comment": "SOP-8 wide body (16mm tape)",
+      "match": "SOP-8W|SOP8W|SOP.*Wide",
+      "tape_mm": 16,
+      "pitch_mm": 12,
+      "thickness": "thin"
+    }
+  ]
+}

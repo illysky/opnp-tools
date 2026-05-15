@@ -1,0 +1,7 @@
+Type,Value,Voltage,Footprint
+R,30Ω,N/A,"0402"
+L,1.8nH,N/A,"0402"
+C,470nF,N/A,"0603"
+R,12Ω,N/A,"0402"
+R,470Ω,N/A,"0402"
+R,360kΩ,N/A,"0402"
