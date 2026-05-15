@@ -277,10 +277,9 @@ def run():
         multiplier  = (1.0 + attrition) if is_passive else 1.0
         total_qty   = int(math.ceil(board_count * build_size * multiplier))
 
-        # Physical tape capacity for this feeder slot
+        # Physical tape capacity for one 160mm feeder slot
         capacity    = int(MAX_TAPE_MM / pitch)          # floor: 160/4 = 40
         num_feeders = max(1, int(math.ceil(float(total_qty) / capacity)))
-        per_feeder  = capacity                          # always fill to tape capacity
 
         feeder_plan.append({
             "part_id":        part_id,
@@ -289,7 +288,8 @@ def run():
             "tape_width":     tape_w,
             "tape_thickness": tape_t,
             "num_feeders":    num_feeders,
-            "per_feeder":     per_feeder,
+            "total_qty":      total_qty,
+            "capacity":       capacity,
         })
 
     # Show all errors before doing anything — user must fix them first
@@ -335,7 +335,12 @@ def run():
         pick_z = feeder_z + fp["tape_thickness"]
         z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 90.0)
 
+        remaining = fp["total_qty"]
         for i in range(fp["num_feeders"]):
+            # Each feeder holds up to capacity; last feeder gets the remainder
+            this_feeder_qty = min(fp["capacity"], remaining)
+            remaining -= this_feeder_qty
+
             w_key = int(fp["tape_width"])
             seq   = seq_by_width.get(w_key, 1)
             seq_by_width[w_key] = seq + 1
@@ -347,7 +352,7 @@ def run():
             feeder.setPartPitch(Length(fp["pitch"],      LengthUnit.Millimeters))
             feeder.setTapeWidth(Length(fp["tape_width"], LengthUnit.Millimeters))
             feeder.setFeedCount(0)
-            feeder.setMaxFeedCount(fp["per_feeder"])
+            feeder.setMaxFeedCount(this_feeder_qty)
             feeder.setEnabled(False)
 
             try:

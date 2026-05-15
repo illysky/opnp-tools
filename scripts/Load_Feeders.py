@@ -499,8 +499,8 @@ def _loading_guide(feeders_info):
         key = flist[0]["holder_key"]
         lines = ["<b>H{:02d} &nbsp; {} holder</b><br><br>".format(holder_idx + 1, key)]
         for fi in flist:
-            lines.append("&nbsp;&nbsp;• &nbsp;<b>{}</b> &nbsp; {:.0f}mm cut &nbsp; [{}]".format(
-                fi["part_id"], fi["cut_length"], fi["spec_str"]))
+            lines.append("&nbsp;&nbsp;• &nbsp;<b>{}</b> &nbsp; {} pcs &nbsp; {:.0f}mm cut &nbsp; [{}]".format(
+                fi["part_id"], fi["max_count"], fi["cut_length"], fi["spec_str"]))
         pages.append("<br>".join(lines))
 
     total = len(pages)
