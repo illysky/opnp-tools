@@ -154,7 +154,7 @@ def run():
             # Only add a new rule if the package is fully configured —
             # nozzle assigned AND body dimensions set. That way we know
             # the user has deliberately set it up in OpenPnP.
-            if not nozzle_name or bw == 0.0 or bh == 0.0:
+            if not nozzle_name or bw == 0.0 or bh == 0.0 or height_mm == 0.0:
                 continue
 
             new_rule = {
