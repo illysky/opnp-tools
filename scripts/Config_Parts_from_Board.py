@@ -180,7 +180,7 @@ def run():
         JOptionPane.showMessageDialog(
             None,
             "No boards are currently open in OpenPnP.\n"
-            "Open a board first via File \u2192 Open Board, then run this script again.",
+            "Open a board first via File > Open Board, then run this script again.",
             "Config Parts from Board",
             JOptionPane.ERROR_MESSAGE,
         )
@@ -351,17 +351,13 @@ def run():
         open(parts_xml, "w").write(content)
 
     # --- Summary ----------------------------------------------------------
-    summary = (
-        "Board: {}\n\n"
-        "  Parts created:    {}\n"
-        "  Packages created: {}\n\n"
-        "Configuration saved."
-    ).format(selected_name, n_parts_created, n_pkgs_created)
+    summary = "{}\n\n{} Parts Created\n{} Packages Created".format(
+        selected_name, n_parts_created, n_pkgs_created)
 
     JOptionPane.showMessageDialog(
         None,
         summary,
-        "Config Parts from Board \u2014 Done",
+        "Config Parts from Board",
         JOptionPane.INFORMATION_MESSAGE,
     )
 
