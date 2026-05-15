@@ -80,21 +80,34 @@ def _build_nozzle_name_to_id(machine_xml_path):
     return mapping
 
 
+def _parse_tape_spec(spec):
+    """Parse '8-70-W-2' -> (width_mm, thickness_mm, colour, pitch_mm)."""
+    try:
+        p = spec.split("-")
+        return float(p[0]), float(p[1]) / 100.0, \
+               p[2].upper() if len(p) > 2 else "B", \
+               float(p[3]) if len(p) > 3 else 4.0
+    except Exception:
+        return 8.0, 0.35, "B", 4.0
+
+
 def _lookup_package(pkg_id, rules, nozzle_name_to_id):
     """
-    Return (nozzle_tip_id, height_mm, body_width_mm, body_height_mm) for the
-    first rule whose pattern matches pkg_id (case-insensitive).
-    Nozzle tip name is resolved to internal ID via nozzle_name_to_id.
+    Return (nozzle_tip_id, height_mm, body_width_mm, body_height_mm,
+            tape_width_mm, tape_pitch_mm) for the first rule whose pattern
+    matches pkg_id (case-insensitive).
     """
     for rule in rules:
         if re.search(rule["pattern"], pkg_id, re.IGNORECASE):
             nozzle_name = rule.get("nozzle", "N24")
             nozzle_id   = nozzle_name_to_id.get(nozzle_name, nozzle_name)
+            tape_w, _, _, tape_p = _parse_tape_spec(rule.get("tape_spec", "8-35-B-4"))
             return (nozzle_id,
                     rule.get("height_mm", 1.0),
                     rule.get("body_width_mm", 0.0),
-                    rule.get("body_height_mm", 0.0))
-    return None, 1.0, 0.0, 0.0
+                    rule.get("body_height_mm", 0.0),
+                    tape_w, tape_p)
+    return None, 1.0, 0.0, 0.0, 8.0, 4.0
 
 
 def _add_nozzle_tip_to_package(pkg, nozzle_id):
@@ -229,16 +242,18 @@ def run():
     pkg_height_map   = {}   # pkg_id -> height_mm
     pkg_nozzle_map   = {}   # pkg_id -> nozzle_tip_id
     pkg_geometry_map = {}   # pkg_id -> (body_width_mm, body_height_mm)
+    pkg_tape_map     = {}   # pkg_id -> (tape_width_mm, tape_pitch_mm)
     new_part_ids     = set()
     new_pkg_ids      = set()
 
     for part_id, pkg_id in pairs:
-        nozzle, height, bw, bh = _lookup_package(pkg_id, rules, nozzle_name_to_id)
+        nozzle, height, bw, bh, tw, tp = _lookup_package(pkg_id, rules, nozzle_name_to_id)
         if height is not None:
             pkg_height_map[pkg_id]  = height
         if nozzle is not None:
             pkg_nozzle_map[pkg_id]  = nozzle
         pkg_geometry_map[pkg_id] = (bw, bh)
+        pkg_tape_map[pkg_id]     = (tw, tp)
         new_part_ids.add(part_id)
         new_pkg_ids.add(pkg_id)
 
@@ -258,7 +273,7 @@ def run():
             cfg.addPackage(pkg)
             n_pkgs_created += 1
 
-        # Apply nozzle tip and footprint geometry to the live in-memory object
+        # Apply nozzle tip, footprint geometry and tape spec to live object
         live_pkg = cfg.getPackage(pkg_id)
         if live_pkg is not None:
             if nozzle_id:
@@ -269,6 +284,15 @@ def run():
                 fp.setBodyWidth(bw)
                 fp.setBodyHeight(bh)
                 fp.setUnits(LengthUnit.Millimeters)
+            tw, tp = pkg_tape_map.get(pkg_id, (8.0, 4.0))
+            try:
+                live_pkg.setTapeWidth(Length(tw, LengthUnit.Millimeters))
+            except Exception:
+                pass
+            try:
+                live_pkg.setPartPitch(Length(tp, LengthUnit.Millimeters))
+            except Exception:
+                pass
 
     # --- Create parts via API ---------------------------------------------
     existing_part_ids = set(p.getId() for p in cfg.getParts())
