@@ -19,7 +19,15 @@ Run this after tweaking packages or part heights in the OpenPnP UI.
 from __future__ import absolute_import
 import os, re, json
 
-from javax.swing import JOptionPane
+from javax.swing import JOptionPane, JLabel
+
+DIALOG_TITLE = "Update Package Rules"
+DIALOG_WIDTH = 300
+
+def _msg(text):
+    html = "<html><div style='width:{}px'>{}</div></html>".format(
+        DIALOG_WIDTH, text.replace("\n", "<br>"))
+    return JLabel(html)
 
 from org.openpnp.model import Configuration, LengthUnit
 
@@ -90,8 +98,8 @@ def run():
 
     if not os.path.exists(RULES_FILE):
         JOptionPane.showMessageDialog(None,
-            "package_rules.json not found at:\n" + RULES_FILE,
-            "Update Package Rules", JOptionPane.ERROR_MESSAGE)
+            _msg("package_rules.json not found at:\n" + RULES_FILE),
+            DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
         return
 
     data  = _load_rules()
@@ -187,16 +195,16 @@ def run():
 
     # -----------------------------------------------------------------------
     if pkg_updated == 0 and pkg_added == 0 and part_updated == 0:
-        JOptionPane.showMessageDialog(None, "No changes.",
-            "Update Package Rules", JOptionPane.INFORMATION_MESSAGE)
+        JOptionPane.showMessageDialog(None, _msg("No changes."),
+            DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
         return
 
     _save_rules(data)
 
     JOptionPane.showMessageDialog(None,
-        "{} Package Added\n{} Package Updated\n{} Part Updated".format(
-            pkg_added, pkg_updated, part_updated),
-        "Update Package Rules", JOptionPane.INFORMATION_MESSAGE)
+        _msg("{} Package Added\n{} Package Updated\n{} Part Updated".format(
+            pkg_added, pkg_updated, part_updated)),
+        DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE)
 
 
 run()

@@ -22,6 +22,15 @@ import xml.etree.ElementTree as ET
 
 from javax.swing import (JOptionPane, JComboBox, JPanel, JLabel, BoxLayout)
 
+DIALOG_TITLE = "Config Parts from Board"
+DIALOG_WIDTH = 300   # px — keeps all popups the same width
+
+def _msg(text):
+    """Wrap text in a fixed-width HTML label for consistent dialog sizing."""
+    html = "<html><div style='width:{}px'>{}</div></html>".format(
+        DIALOG_WIDTH, text.replace("\n", "<br>"))
+    return JLabel(html)
+
 from org.openpnp.model import Configuration, Part, LengthUnit, Length
 # 'Package' clashes with the Python built-in keyword, import via the module alias
 from org.openpnp import model as _openpnp_model
@@ -40,8 +49,8 @@ def _load_rules():
         return data.get("rules", [])
     except Exception as e:
         JOptionPane.showMessageDialog(None,
-            "Could not load package_rules.json:\n{}\n\nUsing catch-all defaults.".format(e),
-            "Config Parts from Board", JOptionPane.WARNING_MESSAGE)
+            _msg("Could not load package_rules.json:\n{}\n\nUsing catch-all defaults.".format(e)),
+            DIALOG_TITLE, JOptionPane.WARNING_MESSAGE)
         return [{"pattern": "", "nozzle": "N24", "height_mm": 1.0,
                  "body_width_mm": 0.0, "body_height_mm": 0.0}]
 
@@ -160,8 +169,8 @@ def run():
     CLEAR_OPTIONS = ["Yes", "No", "Cancel"]
     clear_choice = JOptionPane.showOptionDialog(
         None,
-        "Clear all existing (non-fiducial) parts and packages before importing?",
-        "Config Parts from Board",
+        _msg("Clear all existing (non-fiducial) parts and packages before importing?"),
+        DIALOG_TITLE,
         JOptionPane.DEFAULT_OPTION,
         JOptionPane.QUESTION_MESSAGE,
         None,
@@ -179,10 +188,9 @@ def run():
     if not open_boards:
         JOptionPane.showMessageDialog(
             None,
-            "No boards are currently open in OpenPnP.\n"
-            "Open a board first via File > Open Board, then run this script again.",
-            "Config Parts from Board",
-            JOptionPane.ERROR_MESSAGE,
+            _msg("No boards are currently open in OpenPnP.\n"
+                 "Open a board first via File > Open Board, then run this script again."),
+            DIALOG_TITLE, JOptionPane.ERROR_MESSAGE,
         )
         return
 
@@ -196,7 +204,7 @@ def run():
     ok = JOptionPane.showConfirmDialog(
         None,
         panel,
-        "Config Parts from Board",
+        DIALOG_TITLE,
         JOptionPane.OK_CANCEL_OPTION,
         JOptionPane.PLAIN_MESSAGE,
     )
@@ -212,9 +220,8 @@ def run():
     if not pairs:
         JOptionPane.showMessageDialog(
             None,
-            "No placements with a part-id found in board: " + selected_name,
-            "Config Parts from Board",
-            JOptionPane.WARNING_MESSAGE,
+            _msg("No placements with a part-id found in board: " + selected_name),
+            DIALOG_TITLE, JOptionPane.WARNING_MESSAGE,
         )
         return
 
@@ -356,9 +363,8 @@ def run():
 
     JOptionPane.showMessageDialog(
         None,
-        summary,
-        "Config Parts from Board",
-        JOptionPane.INFORMATION_MESSAGE,
+        _msg(summary),
+        DIALOG_TITLE, JOptionPane.INFORMATION_MESSAGE,
     )
 
 
