@@ -767,7 +767,7 @@ def run():
         return
 
     # ------------------------------------------------------------------
-    # Interactive load loop — page through holders, THEN scan
+    # Interactive load loop — one slot at a time with scan + summary
     # ------------------------------------------------------------------
     from collections import OrderedDict
 
@@ -777,52 +777,39 @@ def run():
 
     holder_list   = list(by_holder.items())
     total_holders = len(holder_list)
+    loaded        = 0
+    skipped_load  = 0
     h_idx         = 0
 
-    # Step 1: navigate through all holders (no scanning yet)
     while 0 <= h_idx < total_holders:
         holder_idx, flist = holder_list[h_idx]
         h_num    = holder_idx + 1
-        h_key    = flist[0]["holder_key"]
         is_first = (h_idx == 0)
         is_last  = (h_idx == total_holders - 1)
 
+        # --- Step A: show contents, confirm loaded ---
         lines = ["Load Slot {} with:\n".format(h_num)]
         for fi in flist:
             lines.append("  {}   {} pcs   {:.0f}mm".format(
                 fi["part_id"], fi["max_count"], fi["cut_length"]))
+        lines.append("\nClick Scan when tapes are loaded.")
 
-        if is_last:
-            btns = ["Start Scan"] if is_first else ["Back", "Start Scan", "Exit"]
-        else:
-            btns = ["Next"] if is_first else ["Back", "Next", "Exit"]
+        btns_a = (["Scan", "Exit"] if is_first
+                  else ["Back", "Scan", "Exit"])
 
         choice = JOptionPane.showOptionDialog(
             None, _msg("\n".join(lines)),
             "{} — {}/{}".format(DIALOG_TITLE, h_idx + 1, total_holders),
             JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
-            None, btns, btns[0])
+            None, btns_a, btns_a[0])
 
-        if choice == JOptionPane.CLOSED_OPTION:
-            return
-        label = btns[choice]
-        if label == "Exit":
-            return
-        elif label == "Back":
+        if choice == JOptionPane.CLOSED_OPTION or btns_a[choice] == "Exit":
+            break
+        if btns_a[choice] == "Back":
             h_idx -= 1
-        elif label == "Next":
-            h_idx += 1
-        elif label == "Start Scan":
-            break   # done navigating — proceed to scan
-    else:
-        return   # exited loop without hitting Start Scan
+            continue
 
-    # Step 2: scan all holders in order
-    loaded       = 0
-    skipped_load = 0
-
-    for holder_idx, flist in holder_list:
-        h_num    = holder_idx + 1
+        # --- Step B: scan this slot ---
         x_holder = holder_cfg["start_x"] + holder_idx * holder_cfg["spacing_x"]
         start_y  = holder_cfg["start_y"]
         z_cfg    = holder_cfg["z"]
@@ -835,16 +822,18 @@ def run():
             JOptionPane.showMessageDialog(None,
                 _msg("Scan failed for slot {}:\n{}".format(h_num, e)),
                 DIALOG_TITLE, JOptionPane.ERROR_MESSAGE)
-            skipped_load += len(flist)
+            h_idx += 1
             continue
 
         zones = _zones_from_detections(detections)
-        _set_status("Slot {}: {} zone(s) found, {} feeder(s)".format(
-            h_num, len(zones), len(flist)))
+
+        # --- Step C: configure feeders, build summary ---
+        slot_ok  = []
+        slot_err = []
 
         for i, fi in enumerate(flist):
             if i >= len(zones):
-                _set_status("  No zone for {}".format(fi["part_id"]))
+                slot_err.append("  {} — not found".format(fi["part_id"]))
                 skipped_load += 1
                 continue
             _, hole1, hole2 = zones[i]
@@ -853,13 +842,38 @@ def run():
                 fi["feeder"].setLastHoleLocation(hole2)
                 fi["feeder"].setFeedCount(0)
                 fi["feeder"].setEnabled(True)
+                slot_ok.append("  {} — OK".format(fi["part_id"]))
                 loaded += 1
-                _set_status("  Configured {}".format(fi["part_id"]))
             except Exception as e:
-                _set_status("  Error {}: {}".format(fi["part_id"], e))
+                slot_err.append("  {} — error: {}".format(fi["part_id"], e))
                 skipped_load += 1
 
         cfg.save()
+
+        # --- Step D: summary dialog ---
+        summary_lines = ["Slot {} scan complete.\n".format(h_num)]
+        if slot_ok:
+            summary_lines.append("Configured:")
+            summary_lines += slot_ok
+        if slot_err:
+            summary_lines.append("\nNot found / failed:")
+            summary_lines += slot_err
+
+        if is_last:
+            btns_d = ["Done"]
+        else:
+            btns_d = ["Next Slot", "Exit"]
+
+        choice2 = JOptionPane.showOptionDialog(
+            None, _msg("\n".join(summary_lines)),
+            "{} — {}/{}".format(DIALOG_TITLE, h_idx + 1, total_holders),
+            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
+            None, btns_d, btns_d[0])
+
+        if choice2 == JOptionPane.CLOSED_OPTION or btns_d[choice2] == "Exit":
+            break
+
+        h_idx += 1
 
     # ------------------------------------------------------------------
     # Done
