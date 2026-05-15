@@ -333,7 +333,7 @@ def run():
     for fp in feeder_plan:
         # Z = user value + tape thickness so nozzle reaches into the pocket
         pick_z = feeder_z + fp["tape_thickness"]
-        z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 0.0)
+        z_loc  = Location(LengthUnit.Millimeters, 0.0, 0.0, pick_z, 90.0)
 
         for i in range(fp["num_feeders"]):
             w_key = int(fp["tape_width"])
