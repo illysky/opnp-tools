@@ -317,9 +317,23 @@ def _find_holes_at_current_pos(camera, pipeline=None):
 
     if pipeline is not None:
         try:
-            # Set feeder hole size properties that DetectCircularSymmetry reads
-            # via property-name="sprocketHole" in the default pipeline XML
             pipeline.setProperty("camera", camera)
+
+            # DetectCircularSymmetry uses property-name="sprocketHole" to read
+            # pixel-based size overrides.  Convert mm->pixels using camera calibration.
+            try:
+                upp = camera.getUnitsPerPixel().convertToUnits(LengthUnit.Millimeters)
+                mm_per_px = (abs(upp.getX()) + abs(upp.getY())) / 2.0
+                if mm_per_px > 0:
+                    min_px = int(SPROCKET_HOLE_DIA_MIN.getValue() / mm_per_px)
+                    max_px = int(SPROCKET_HOLE_DIA_MAX.getValue() / mm_per_px)
+                    _set_status("  mm/px={:.4f} sprocket dia {}-{}px".format(
+                        mm_per_px, min_px, max_px))
+                    pipeline.setProperty("sprocketHole.minDiameter", min_px)
+                    pipeline.setProperty("sprocketHole.maxDiameter", max_px)
+            except Exception as e:
+                _set_status("  Could not set pixel properties: {}".format(e))
+
             pipeline.process()
 
             # Push working image to UI
