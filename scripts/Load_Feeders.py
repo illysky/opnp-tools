@@ -330,13 +330,23 @@ def _find_holes_at_current_pos(camera):
         return []
 
 
+SPROCKET_X_TOL = 0.5   # mm — two sprocket holes must share the same X (same edge)
+
 def _pick_hole_pair(circles):
-    """From a list of circles, return the first (hole1, hole2) pair
-    whose Y-separation matches the expected 4mm sprocket pitch."""
-    for i in range(len(circles) - 1):
-        dy = abs(circles[i + 1].getY() - circles[i].getY())
-        if abs(dy - SPROCKET_HOLE_PITCH) <= SPROCKET_PITCH_TOL:
-            return circles[i], circles[i + 1]
+    """Return the first pair of circles that match sprocket hole geometry:
+      - Y separation ≈ 4mm (tape sprocket pitch)
+      - X positions within tolerance (both on the same tape edge)
+    Checks all combinations, not just adjacent, to handle extra detections."""
+    for i in range(len(circles)):
+        for j in range(len(circles)):
+            if i == j:
+                continue
+            c1, c2 = circles[i], circles[j]
+            dy = c2.getY() - c1.getY()          # positive = c2 is further along tape
+            dx = abs(c2.getX() - c1.getX())
+            if dy > 0 and abs(dy - SPROCKET_HOLE_PITCH) <= SPROCKET_PITCH_TOL \
+                      and dx <= SPROCKET_X_TOL:
+                return c1, c2
     return None, None
 
 
